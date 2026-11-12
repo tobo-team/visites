@@ -1,0 +1,221 @@
+{
+ "titre": "1 bedroom apartment, 49.5 sq m",
+ "sousTitre": "Hornsey Town Hall",
+ "langue": "en",
+ "mention": "Indicative tour, not contractual",
+ "depart": {
+  "x": 2.88,
+  "z": 6.77,
+  "cx": 1.14,
+  "cz": 1.86
+ },
+ "pieces": [
+  {
+   "nom": "Living room",
+   "x": 2.48,
+   "z": 6.87,
+   "cx": 1.14,
+   "cz": 1.86
+  },
+  {
+   "nom": "Bedroom",
+   "x": 3.98,
+   "z": 4.27,
+   "cx": 5.48,
+   "cz": 2.2
+  },
+  {
+   "nom": "Bathroom",
+   "x": 4.98,
+   "z": 6.37,
+   "cx": 6.2,
+   "cz": 5.29
+  },
+  {
+   "nom": "Garden",
+   "x": 6.08,
+   "z": -0.83,
+   "cx": 2.78,
+   "cz": -2.13
+  }
+ ],
+ "limites": [
+  -0.42,
+  -3.53,
+  6.85,
+  7.96
+ ],
+ "hauteurOeil": 1.6,
+ "hauteurPlafond": 2.4,
+ "ambianceCouleurs": "foret",
+ "lumiere": {
+  "soleil": {
+   "azimut": 340.0,
+   "elevation": 27.0,
+   "couleur": [
+    1.0,
+    0.9,
+    0.74
+   ],
+   "intensite": 3.2,
+   "vers": [
+    -0.3047,
+    0.454,
+    -0.8373
+   ]
+  },
+  "ambiance": {
+   "couleur": [
+    1.0,
+    0.96,
+    0.9
+   ],
+   "intensite": 0.55
+  },
+  "lampes": [
+   {
+    "x": 2.0,
+    "y": 1.52,
+    "z": 4.4,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "sejour",
+    "genre": "suspension"
+   },
+   {
+    "x": 4.944,
+    "y": 1.9,
+    "z": 1.544,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "chambre",
+    "genre": "suspension"
+   },
+   {
+    "x": 0.26,
+    "y": 1.46,
+    "z": 3.219,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 6,
+    "portee": 4.5,
+    "piece": "sejour",
+    "genre": "lampadaire"
+   },
+   {
+    "x": 5.524,
+    "y": 2.32,
+    "z": 5.062,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sdb",
+    "genre": "spot"
+   },
+   {
+    "x": 5.524,
+    "y": 2.32,
+    "z": 6.486,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sdb",
+    "genre": "spot"
+   },
+   {
+    "x": 0.792,
+    "y": 2.32,
+    "z": 6.678,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sejour",
+    "genre": "spot"
+   },
+   {
+    "x": 0.792,
+    "y": 2.32,
+    "z": 4.716,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sejour",
+    "genre": "spot"
+   },
+   {
+    "x": 6.378,
+    "y": 2.02,
+    "z": 5.29,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "sdb",
+    "genre": "applique"
+   },
+   {
+    "x": 6.256,
+    "y": 0.74,
+    "z": 1.16,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "chambre",
+    "genre": "chevet"
+   },
+   {
+    "x": 6.256,
+    "y": 0.74,
+    "z": 3.24,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "chambre",
+    "genre": "chevet"
+   }
+  ]
+ },
+ "glb": "lot.glb",
+ "obstacles": "obstacles.json",
+ "apercu": "apercu.jpg"
+}
