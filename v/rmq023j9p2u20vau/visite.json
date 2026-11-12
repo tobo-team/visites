@@ -1,0 +1,165 @@
+{
+ "titre": "T1 de 23 m²",
+ "sousTitre": "Nansouty",
+ "langue": "fr",
+ "mention": "Visite indicative, non contractuelle",
+ "depart": {
+  "x": 0.5,
+  "z": 3.5,
+  "cx": 3.07,
+  "cz": 5.73
+ },
+ "pieces": [
+  {
+   "nom": "Séjour",
+   "x": 0.4,
+   "z": 3.0,
+   "cx": 3.07,
+   "cz": 5.73
+  },
+  {
+   "nom": "Salle d'eau",
+   "x": 3.5,
+   "z": 1.1,
+   "cx": 1.78,
+   "cz": 0.4
+  }
+ ],
+ "limites": [
+  -0.3,
+  -0.3,
+  4.49,
+  6.97
+ ],
+ "hauteurOeil": 1.6,
+ "hauteurPlafond": 2.5,
+ "ambianceCouleurs": "atlantique",
+ "lumiere": {
+  "soleil": {
+   "azimut": 160.0,
+   "elevation": 27.0,
+   "couleur": [
+    1.0,
+    0.9,
+    0.74
+   ],
+   "intensite": 3.2,
+   "vers": [
+    0.3047,
+    0.454,
+    0.8373
+   ]
+  },
+  "ambiance": {
+   "couleur": [
+    1.0,
+    0.96,
+    0.9
+   ],
+   "intensite": 0.55
+  },
+  "lampes": [
+   {
+    "x": 2.0,
+    "y": 1.52,
+    "z": 3.98,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "piece_de_vie",
+    "genre": "suspension"
+   },
+   {
+    "x": 3.926,
+    "y": 1.46,
+    "z": 4.62,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 6,
+    "portee": 4.5,
+    "piece": "piece_de_vie",
+    "genre": "lampadaire"
+   },
+   {
+    "x": 2.4,
+    "y": 2.42,
+    "z": 0.86,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sde",
+    "genre": "spot"
+   },
+   {
+    "x": 3.356,
+    "y": 2.42,
+    "z": 3.749,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "piece_de_vie",
+    "genre": "spot"
+   },
+   {
+    "x": 1.664,
+    "y": 2.02,
+    "z": 0.404,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "sde",
+    "genre": "applique"
+   },
+   {
+    "x": 0.24,
+    "y": 0.74,
+    "z": 6.412,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "piece_de_vie",
+    "genre": "chevet"
+   },
+   {
+    "x": 0.24,
+    "y": 0.74,
+    "z": 4.532,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "piece_de_vie",
+    "genre": "chevet"
+   }
+  ]
+ },
+ "glb": "lot.glb",
+ "obstacles": "obstacles.json",
+ "apercu": "apercu.jpg"
+}
