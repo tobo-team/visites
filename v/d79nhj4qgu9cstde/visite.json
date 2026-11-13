@@ -1,0 +1,416 @@
+{
+ "titre": "T3 de 62 m² en rez-de-jardin",
+ "sousTitre": "Nuances, Biot",
+ "langue": "fr",
+ "mention": "Visite indicative, non contractuelle",
+ "depart": {
+  "x": 7.05,
+  "z": 1.03,
+  "cx": 2.03,
+  "cz": 5.59
+ },
+ "pieces": [
+  {
+   "nom": "Séjour",
+   "x": 5.55,
+   "z": 3.23,
+   "cx": 2.03,
+   "cz": 5.59
+  },
+  {
+   "nom": "Cuisine",
+   "x": 0.85,
+   "z": 3.93,
+   "cx": 5.45,
+   "cz": 5.36
+  },
+  {
+   "nom": "Chambre 1",
+   "x": 4.45,
+   "z": 2.03,
+   "cx": 2.1,
+   "cz": 1.02
+  },
+  {
+   "nom": "Chambre 2",
+   "x": 7.25,
+   "z": 4.03,
+   "cx": 8.72,
+   "cz": 5.71
+  },
+  {
+   "nom": "Salle de bains",
+   "x": 8.25,
+   "z": 1.63,
+   "cx": 9.8,
+   "cz": 2.1
+  },
+  {
+   "nom": "WC",
+   "x": 5.85,
+   "z": 1.13,
+   "cx": 5.29,
+   "cz": 0.5
+  },
+  {
+   "nom": "Dégagement",
+   "x": 7.25,
+   "z": 0.63,
+   "cx": 6.92,
+   "cz": 2.08
+  },
+  {
+   "nom": "Terrasse",
+   "x": -2.85,
+   "z": 0.93,
+   "cx": -2.15,
+   "cz": 4.63
+  },
+  {
+   "nom": "Jardin",
+   "x": -9.95,
+   "z": 0.93,
+   "cx": -6.35,
+   "cz": 4.23
+  }
+ ],
+ "limites": [
+  -11.15,
+  -0.37,
+  10.32,
+  7.09
+ ],
+ "hauteurOeil": 1.6,
+ "hauteurPlafond": 2.5,
+ "ambianceCouleurs": "terracotta",
+ "lumiere": {
+  "soleil": {
+   "azimut": 250.0,
+   "elevation": 27.0,
+   "couleur": [
+    1.0,
+    0.9,
+    0.74
+   ],
+   "intensite": 3.2,
+   "vers": [
+    -0.8373,
+    0.454,
+    0.3047
+   ]
+  },
+  "ambiance": {
+   "couleur": [
+    1.0,
+    0.96,
+    0.9
+   ],
+   "intensite": 0.55
+  },
+  "lampes": [
+   {
+    "x": 1.977,
+    "y": 2.0,
+    "z": 4.743,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "sejour",
+    "genre": "suspension"
+   },
+   {
+    "x": 1.337,
+    "y": 2.0,
+    "z": 1.343,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "ch1",
+    "genre": "suspension"
+   },
+   {
+    "x": 8.217,
+    "y": 2.0,
+    "z": 5.133,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "ch2",
+    "genre": "suspension"
+   },
+   {
+    "x": 4.302,
+    "y": 1.6,
+    "z": 6.225,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "sejour",
+    "genre": "suspension"
+   },
+   {
+    "x": 4.302,
+    "y": 1.6,
+    "z": 5.605,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "sejour",
+    "genre": "suspension"
+   },
+   {
+    "x": 4.302,
+    "y": 1.6,
+    "z": 4.985,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 8,
+    "portee": 5.0,
+    "piece": "sejour",
+    "genre": "suspension"
+   },
+   {
+    "x": 0.674,
+    "y": 1.46,
+    "z": 6.466,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 6,
+    "portee": 4.5,
+    "piece": "sejour",
+    "genre": "lampadaire"
+   },
+   {
+    "x": 6.917,
+    "y": 2.42,
+    "z": 1.241,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "dgt",
+    "genre": "spot"
+   },
+   {
+    "x": 6.917,
+    "y": 2.42,
+    "z": 2.925,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "dgt",
+    "genre": "spot"
+   },
+   {
+    "x": 8.777,
+    "y": 2.42,
+    "z": 1.212,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sdb",
+    "genre": "spot"
+   },
+   {
+    "x": 8.777,
+    "y": 2.42,
+    "z": 2.394,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sdb",
+    "genre": "spot"
+   },
+   {
+    "x": 5.597,
+    "y": 2.42,
+    "z": 0.803,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "wc",
+    "genre": "spot"
+   },
+   {
+    "x": 5.805,
+    "y": 2.42,
+    "z": 3.995,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sejour",
+    "genre": "spot"
+   },
+   {
+    "x": 5.805,
+    "y": 2.42,
+    "z": 5.406,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sejour",
+    "genre": "spot"
+   },
+   {
+    "x": 5.371,
+    "y": 2.42,
+    "z": 5.982,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 4,
+    "portee": 4.0,
+    "piece": "sejour",
+    "genre": "spot"
+   },
+   {
+    "x": 9.896,
+    "y": 2.02,
+    "z": 2.097,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "sdb",
+    "genre": "applique"
+   },
+   {
+    "x": 1.06,
+    "y": 0.74,
+    "z": 0.24,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "ch1",
+    "genre": "chevet"
+   },
+   {
+    "x": 3.14,
+    "y": 0.74,
+    "z": 0.24,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "ch1",
+    "genre": "chevet"
+   },
+   {
+    "x": 9.756,
+    "y": 0.74,
+    "z": 6.486,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "ch2",
+    "genre": "chevet"
+   },
+   {
+    "x": 7.676,
+    "y": 0.74,
+    "z": 6.486,
+    "couleur": [
+     1.0,
+     0.85,
+     0.65
+    ],
+    "intensite": 3,
+    "portee": 3.0,
+    "piece": "ch2",
+    "genre": "chevet"
+   }
+  ]
+ },
+ "glb": "lot.glb",
+ "obstacles": "obstacles.json",
+ "apercu": "apercu.jpg",
+ "styles": [
+  {
+   "id": "terracotta",
+   "nom": "Riviera",
+   "couleur": "#B4603E",
+   "glb": "lot.glb"
+  },
+  {
+   "id": "atlantique",
+   "nom": "Atlantique",
+   "couleur": "#2F4A5C",
+   "glb": "lot_atlantique.glb"
+  },
+  {
+   "id": "foret",
+   "nom": "Forêt",
+   "couleur": "#5F7262",
+   "glb": "lot_foret.glb"
+  }
+ ]
+}
