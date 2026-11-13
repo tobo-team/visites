@@ -9,6 +9,28 @@ const pts = new Map(v.points.map((p) => [p.id, p]));
 const pano = new Pano($("c")); window.__pano = pano;      // exposé pour mesurer la fluidité (dessin forcé + readPixels)
 const barre = $("pieces"), reperes = $("reperes"), aide = $("aide");
 let ici = null, occupe = false, aideFinie = false;
+// Ambiances de lumière (jour, matin, nuit, pluie) : une série d'images par ambiance, dans son dossier. On change d'ambiance sans changer de place ni de regard.
+const ambs = v.ambiances || [];
+let amb = ambs.find((a) => a.id === new URL(location.href).searchParams.get("ambiance")) || ambs[0] || { id: "jour", dossier: "" };
+const img = (p) => (amb.dossier || "") + p.image;
+if (ambs.length > 1) {
+  const bx = document.createElement("div"); bx.id = "ambiances";
+  for (const a of ambs) {
+    const b = document.createElement("button"); b.className = "verre"; b.textContent = a.nom; b.dataset.id = a.id; b.classList.toggle("ici", a.id === amb.id);
+    b.onclick = async () => {
+      b.blur(); if (occupe || !ici || a.id === amb.id) return;
+      occupe = true; b.classList.add("charge"); const avant = amb; amb = a;
+      try { await Pano.image(img(ici)); await pano.charger(img(ici), 650, 0);
+        for (const o of bx.children) o.classList.toggle("ici", o.dataset.id === a.id);
+        for (const l of ici.liens) { const n = pts.get(l); if (n) Pano.image(img(n)).catch(() => {}); }
+      } catch (e) { amb = avant; }
+      b.classList.remove("charge"); occupe = false;
+    };
+    bx.append(b);
+  }
+  document.body.append(bx);
+}
+if (v.credit) { const c = document.createElement("div"); c.id = "credit"; c.textContent = v.credit; document.body.append(c); }
 
 for (const p of v.points) {
   const b = document.createElement("button"); b.className = "verre"; b.textContent = p.nom; b.dataset.id = p.id;
@@ -59,13 +81,13 @@ async function aller(id, premier = false) {
   const bouton = [...barre.children].find((b) => b.dataset.id === id); bouton?.classList.add("charge");
   reperes.classList.add("cache");
   try {
-    if (premier) { await pano.charger(q.image); pano.yaw = (v.regardDepart != null && id === v.depart) ? rad(v.regardDepart - q.cap) : 0; pano.pitch = 0; }
+    if (premier) { await pano.charger(img(q)); pano.yaw = (v.regardDepart != null && id === v.depart) ? rad(v.regardDepart - q.cap) : 0; pano.pitch = 0; }
     else {
-      await Pano.image(q.image).catch(() => {});            // l'image est déjà là quand le fondu part : le léger resserrement du champ (on avance) reste calé sur lui
+      await Pano.image(img(q)).catch(() => {});            // l'image est déjà là quand le fondu part : le léger resserrement du champ (on avance) reste calé sur lui
       const f0 = pano.fov, td = performance.now();
       (function avance() { const t = Math.min(1, (performance.now() - td) / 470); pano.fov = f0 * (1 - 0.09 * Math.sin(Math.PI * t)); pano.sale = true;
         if (t < 1) requestAnimationFrame(avance); else { pano.fov = f0; pano.sale = true; } })();
-      await pano.charger(q.image, 450, rad(ici.cap) - rad(q.cap));
+      await pano.charger(img(q), 450, rad(ici.cap) - rad(q.cap));
     }
     ici = q;
     for (const b of barre.children) b.classList.toggle("ici", b.dataset.id === id);
@@ -73,7 +95,7 @@ async function aller(id, premier = false) {
     $("titre-s").textContent = [v.sousTitre, q.nom].filter(Boolean).join(" · ");
     history.replaceState(null, "", "#" + id);
     poserReperes(); placerPlan();
-    for (const l of q.liens) { const n = pts.get(l); if (n) Pano.image(n.image).catch(() => {}); }      // les voisins sont chargés d'avance
+    for (const l of q.liens) { const n = pts.get(l); if (n) Pano.image(img(n)).catch(() => {}); }      // les voisins sont chargés d'avance
   } catch (e) { $("charge-etat") && ($("charge-etat").textContent = String(e.message || e)); }
   bouton?.classList.remove("charge"); occupe = false;
 }

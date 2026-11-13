@@ -18,3 +18,11 @@
 #plan .cone { position: absolute; width: 84px; height: 84px; border-radius: 50%; pointer-events: none; background: conic-gradient(from -36deg, rgba(226, 132, 52, .9) 0deg, rgba(226, 132, 52, .9) 72deg, transparent 72deg); -webkit-mask: radial-gradient(circle, #000 0, #000 22%, transparent 68%); mask: radial-gradient(circle, #000 0, #000 22%, transparent 68%); }
 #plan.grand .cone { width: 150px; height: 150px; }
 @media (max-width: 640px) { #plan { width: 132px; top: calc(max(12px, env(safe-area-inset-top)) + 58px); right: 8px; padding: 4px; } #plan .cone { width: 60px; height: 60px; } }
+
+/* ambiances de lumière : sous le titre */
+#ambiances { position: fixed; left: 12px; top: calc(max(12px, env(safe-area-inset-top)) + 64px); display: flex; gap: 6px; z-index: 3; }
+#ambiances button { color: var(--texte); border-radius: 999px; padding: 7px 12px; font: 600 12.5px/1 inherit; font-family: inherit; cursor: pointer; transition: background .2s, border-color .2s; }
+#ambiances button:hover, #ambiances button.ici { background: rgba(232, 178, 122, .42); border-color: var(--accent); }
+#ambiances button.charge { opacity: .6; cursor: progress; }
+#credit { position: fixed; left: 12px; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 4px); font-size: 10px; color: rgba(255, 248, 239, .78); text-shadow: 0 1px 3px rgba(0, 0, 0, .7); z-index: 2; pointer-events: none; max-width: 30vw; }
+@media (max-width: 640px) { #ambiances { top: calc(max(12px, env(safe-area-inset-top)) + 58px); left: 8px; gap: 5px; } #ambiances button { padding: 6px 10px; font-size: 12px; } #credit { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 82px); max-width: 80vw; font-size: 9px; } }
