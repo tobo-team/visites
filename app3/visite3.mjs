@@ -74,6 +74,9 @@ async function json(nom, facultatif = false) {
   catch (e) { if (facultatif) return null; throw e; }
 }
 // Image décodée hors du fil principal quand le navigateur le permet (comme GLTFLoader : pas sur Safari), retournée et réduite à la demande.
+// Image suivante, ou 60 ms si le navigateur n'en donne pas : dans un onglet en arrière-plan ou une fenêtre masquée, requestAnimationFrame
+// ne répond plus du tout, et un chargement qui l'attend reste figé sur « Préparation de la scène » (vu sur le lien publié le 15/11).
+const suivante = () => new Promise((ok) => { let fait = false; const f = () => { if (!fait) { fait = true; ok(); } }; requestAnimationFrame(f); setTimeout(f, 60); });
 const OPT = { premultiplyAlpha: "none", colorSpaceConversion: "none" };      // ni prémultiplication ni conversion de couleur au décodage
 const PAR_BITMAP = typeof createImageBitmap === "function" && !/^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 async function image(blob, { retourner = false, plafond = 0, exact = null } = {}) {
@@ -422,7 +425,7 @@ async function demarrer() {
         try {
           const t = new THREE.DataTexture(null, im.width, im.height, THREE.RGBAFormat, THREE.UnsignedByteType); Object.assign(t, reg); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false;
           t.source.dataReady = false; t.needsUpdate = true; t.name = nom; renderer.initTexture(t);
-          const N = 8, hb = Math.ceil(im.height / N), suivante = () => new Promise((ok) => { let fait = false; const f = () => { if (!fait) { fait = true; ok(); } }; requestAnimationFrame(f); setTimeout(f, 60); });
+          const N = 8, hb = Math.ceil(im.height / N);
           for (let k = 0; k < N; k++) { const y = k * hb, hh = Math.min(hb, im.height - y); if (hh <= 0) break;
             const bande = await createImageBitmap(im, 0, y, im.width, hh, OPT), s2 = new THREE.Texture(bande); s2.flipY = false; s2.colorSpace = THREE.SRGBColorSpace;
             renderer.copyTextureToTexture(s2, t, null, new THREE.Vector2(0, y)); bande.close(); await suivante(); }
@@ -1214,7 +1217,7 @@ void main() {
     const mats = [...cartesB.entries()];
     const [env] = await Promise.all([envDe(pieceId, nom), ...[...new Set(mats.map(([, c]) => c.atlas))].map((a) => carte(a, nom))]);
     // chaque carte part vers la carte graphique dans sa propre image, avant le fondu : trois cartes de 4096 en une fois figeaient 0,4 s
-    for (const a of new Set(mats.map(([, c]) => c.atlas))) { const t = await carte(a, nom); if (!envoyees.has(t)) { envoyees.add(t); renderer.initTexture(t); await new Promise(requestAnimationFrame); } }
+    for (const a of new Set(mats.map(([, c]) => c.atlas))) { const t = await carte(a, nom); if (!envoyees.has(t)) { envoyees.add(t); renderer.initTexture(t); await suivante(); } }
     for (const [, c] of mats) c.u.value = await carte(c.atlas, nom);
     uForceB.value = echelle(nom);
     fondu = { de: amb, vers: nom, t: 0, duree: immediat ? 1e-6 : 0.9, env };
@@ -1351,7 +1354,7 @@ void main() {
   if (miroirs.length) { const cible = miroirs[0].r.getRenderTarget(); renderer.setRenderTarget(cible); try { await renderer.compileAsync(scene, camera); } catch (e) { /* idem */ } renderer.setRenderTarget(null); }
   //  2. chaque texture partait vers la carte graphique la première fois que son objet entrait dans le champ : on les envoie toutes ici, quatre par image.
   { const vues = new Set(); let n = 0; scene.traverse((o) => { for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) for (const k of ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap", "alphaMap", "lightMap"]) { const t = m[k]; if (t && t.isTexture && t.image) vues.add(t); } });
-    for (const t of vues) { if (envoyees.has(t)) continue; envoyees.add(t); try { renderer.initTexture(t); } catch (e) { /* elle partira au premier rendu */ } if (++n % 4 === 0) { majBarre(T.prepare); await new Promise(requestAnimationFrame); } } etat.textures = vues.size; }
+    for (const t of vues) { if (envoyees.has(t)) continue; envoyees.add(t); try { renderer.initTexture(t); } catch (e) { /* elle partira au premier rendu */ } if (++n % 4 === 0) { majBarre(T.prepare); await suivante(); } } etat.textures = vues.size; }
   dessiner();
   planEl?.v3vue?.();
   suivi.actif = false; etat.pret = true; chargeEl?.classList.add("fini");
