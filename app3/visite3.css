@@ -1,16 +1,21 @@
-/* Visite Three.js (app3). Même identité que la visite 360 validée : verre fumé, pastilles, plan en coin, accent sable. Feuille autonome. */
-:root { --fond: #17130f; --verre: rgba(30, 24, 18, .58); --trait: rgba(255, 244, 230, .28); --texte: #fff8ef; --doux: rgba(255, 244, 230, .72); --accent: #e8b27a; --haut: max(12px, env(safe-area-inset-top)); --bas: max(10px, env(safe-area-inset-bottom)); }
+/* Visite Three.js (app3). Pastilles sombres, plan en coin. Les couleurs sont des variables : une visite aux couleurs d'une marque les redéfinit dans son index.html.
+   Pas de flou d'arrière-plan (backdrop-filter) : posé sur une 3D qui change à chaque image, il oblige le navigateur à refaire le flou 60 fois par seconde. */
+:root { --fond: #17130f; --verre: rgba(30, 24, 18, .8); --trait: rgba(255, 244, 230, .28); --texte: #fff8ef; --doux: rgba(255, 244, 230, .72); --accent: #e8b27a; --accent-rgb: 232, 178, 122; --plan: #e2842c; --plan-rgb: 226, 132, 44; --haut: max(12px, env(safe-area-inset-top)); --bas: max(10px, env(safe-area-inset-bottom)); }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--fond); color: var(--texte); overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
 #c { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; cursor: grab; outline: none; }
 #c.tire { cursor: grabbing; }
 #c.sol { cursor: pointer; }
-.verre { background: var(--verre); border: 1px solid var(--trait); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.verre { background: var(--verre); border: 1px solid var(--trait); }
 button { font-family: inherit; }
 
 #titre { position: fixed; top: var(--haut); left: 12px; max-width: calc(100vw - 24px); border-radius: 14px; padding: 9px 14px; pointer-events: none; z-index: 3; }
 #titre b { display: block; font-size: 15px; font-weight: 650; letter-spacing: .01em; }
 #titre span { display: block; font-size: 12px; color: var(--doux); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#titre.marque { display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 12px; }
+#titre.marque img { height: 30px; width: auto; display: block; flex: none; }
+#titre.marque .txt { border-left: 1px solid var(--trait); padding-left: 12px; min-width: 0; }
+#charge .logo { height: clamp(46px, 9vw, 64px); width: auto; margin-bottom: 26px; }
 #mention { position: fixed; right: 10px; top: var(--haut); font-size: 11px; color: var(--doux); padding: 5px 9px; border-radius: 999px; z-index: 3; pointer-events: none; }
 
 /* ambiances : sous le titre */
@@ -18,14 +23,14 @@ button { font-family: inherit; }
 #ambiances:empty { display: none; }
 #ambiances button { display: flex; align-items: center; gap: 6px; color: var(--texte); border-radius: 999px; padding: 7px 12px 7px 10px; font: 600 12.5px/1 inherit; font-family: inherit; cursor: pointer; transition: background .2s, border-color .2s, opacity .2s; }
 #ambiances button svg { width: 13px; height: 13px; flex: none; }
-#ambiances button:hover, #ambiances button.ici { background: rgba(232, 178, 122, .42); border-color: var(--accent); }
+#ambiances button:hover, #ambiances button.ici { background: rgba(var(--accent-rgb), .42); border-color: var(--accent); }
 #ambiances button.charge { opacity: .6; cursor: progress; }
 
 /* pièces : en bas */
 #pieces { position: fixed; left: 0; right: 0; bottom: var(--bas); display: flex; gap: 8px; padding: 0 12px; overflow-x: auto; scrollbar-width: none; z-index: 3; justify-content: safe center; }
 #pieces::-webkit-scrollbar { display: none; }
 #pieces button { flex: 0 0 auto; color: var(--texte); border-radius: 999px; padding: 10px 15px; font: 600 14px/1 inherit; font-family: inherit; cursor: pointer; transition: background .2s, border-color .2s; }
-#pieces button:hover, #pieces button.ici { background: rgba(232, 178, 122, .42); border-color: var(--accent); }
+#pieces button:hover, #pieces button.ici { background: rgba(var(--accent-rgb), .42); border-color: var(--accent); }
 #pieces button:focus-visible, #ambiances button:focus-visible, #plan button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 #aide { position: fixed; left: 50%; bottom: calc(var(--bas) + 56px); transform: translateX(-50%); font-size: 13px; padding: 8px 14px; border-radius: 999px; white-space: nowrap; z-index: 3; pointer-events: none; transition: opacity .25s; }
@@ -41,7 +46,7 @@ button { font-family: inherit; }
 #plan .vue { pointer-events: none; }
 #plan .piece { fill: rgba(255, 255, 255, 0); stroke: none; cursor: pointer; transition: fill .15s; }
 #plan .piece.survol { fill: rgba(255, 255, 255, .22); }
-#plan .piece.ici { fill: rgba(236, 140, 48, .36); stroke: rgba(226, 132, 44, .95); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+#plan .piece.ici { fill: rgba(var(--plan-rgb), .3); stroke: rgba(var(--plan-rgb), .95); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 #plan .annexe { fill: #cfc7ba; }
 #plan .mur { fill: #3a3028; }
 #plan .allege { fill: #8d8274; }
@@ -60,8 +65,11 @@ button { font-family: inherit; }
 #plan .etiq .n { font-weight: 650; }
 #plan .etiq .s { fill: #7a6e60; }
 #plan.grand .etiq { display: block; }
-#plan .moi { pointer-events: none; }
-#plan .moi .rond { fill: #e2842c; stroke: #fff; stroke-width: 2px; vector-effect: non-scaling-stroke; }
+/* repère du visiteur : deux éléments HTML déplacés par transformation (le plan lui-même n'est jamais redessiné) */
+#plan .moi-html { position: absolute; inset: 0; pointer-events: none; }
+#plan .moi-html .rogne { position: absolute; inset: 0; }
+#plan .moi-html .cone { position: absolute; left: 0; top: 0; border-radius: 50%; background: radial-gradient(circle, rgba(var(--plan-rgb), .85) 0, rgba(var(--plan-rgb), .4) 55%, rgba(var(--plan-rgb), 0) 100%); will-change: transform; }
+#plan .moi-html .rond { position: absolute; left: 0; top: 0; width: 12px; height: 12px; margin: -6px; border-radius: 50%; background: var(--plan); border: 2px solid #fff; box-sizing: border-box; will-change: transform; }
 #plan .legende { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 30px 2px 5px; font-size: 12px; min-height: 24px; }
 #plan .legende b { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #plan .legende span { color: var(--doux); white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -90,8 +98,9 @@ body.sans-ui #titre, body.sans-ui #mention, body.sans-ui #ambiances, body.sans-u
 
 @media (max-width: 640px) {
   #titre { padding: 7px 11px; left: 8px; max-width: calc(100vw - 16px); } #titre b { font-size: 14px; }
+  #titre.marque { gap: 9px; padding: 6px 11px 6px 9px; } #titre.marque img { height: 24px; } #titre.marque .txt { padding-left: 9px; }
   #ambiances { top: calc(var(--haut) + 58px); left: 8px; gap: 5px; } #ambiances button { padding: 6px 10px 6px 9px; font-size: 12px; }
-  #mention { top: auto; bottom: calc(var(--bas) + 46px); left: 0; right: 0; text-align: center; font-size: 9.5px; padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; color: rgba(255, 248, 239, .8); text-shadow: 0 1px 3px rgba(0, 0, 0, .75); }
+  #mention { top: auto; bottom: calc(var(--bas) + 46px); left: 0; right: 0; text-align: center; font-size: 9.5px; padding: 0; background: none; border: 0; color: rgba(255, 248, 239, .8); text-shadow: 0 1px 3px rgba(0, 0, 0, .75); }
   #pieces { justify-content: flex-start; padding: 0 22px 0 12px; -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 34px), transparent 100%); mask-image: linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 34px), transparent 100%); }
   #pieces button { padding: 9px 13px; font-size: 13px; }
   #aide { bottom: calc(var(--bas) + 72px); white-space: normal; text-align: center; width: max-content; max-width: 86vw; border-radius: 16px; }

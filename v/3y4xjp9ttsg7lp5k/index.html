@@ -14,14 +14,16 @@
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#17130f">
+<meta name="theme-color" content="#0a1628">
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="../../app3/visite3.css?v=755470e2">
+<link rel="stylesheet" href="../../app3/visite3.css?v=b4543f45">
+<!-- Marque : Mon Bien Neuf. Bleus du logo (#18a0db, #0e77bc) sur fond marine (leur site : #0e2d5c). Les variables remplacent le sable et l'orange par défaut. -->
+<style>:root { --fond: #0a1628; --verre: rgba(10, 28, 56, .84); --trait: rgba(170, 212, 255, .30); --texte: #f5faff; --doux: rgba(222, 236, 255, .76); --accent: #18a0db; --accent-rgb: 24, 160, 219; --plan: #0e77bc; --plan-rgb: 14, 119, 188; }</style>
 <script type="importmap">{"imports":{"three":"../../app3/vendor/three.module.min.js","three/addons/":"../../app3/vendor/jsm/"}}</script>
 </head>
 <body>
 <canvas id="c" tabindex="0" aria-label="T2 de 46 m²"></canvas>
-<div id="titre" class="verre"><b id="titre-b">T2 de 46 m²</b><span id="titre-s">Domaine Capeyron, Mérignac</span></div>
+<div id="titre" class="verre marque"><img src="logo-blanc.png" alt="Mon Bien Neuf" width="100" height="30"><div class="txt"><b id="titre-b">T2 de 46 m²</b><span id="titre-s">Domaine Capeyron, Mérignac</span></div></div>
 <div id="mention" class="verre">Visite indicative, non contractuelle</div>
 <div id="ambiances"></div>
 <div id="plan" class="verre" hidden></div>
@@ -30,6 +32,7 @@
 <div id="charge">
   <div class="fond" style="background-image:url(apercu.jpg?v=5eadb73c)"></div>
   <div class="boite">
+    <img class="logo" src="logo-blanc.png" alt="Mon Bien Neuf">
     <h1 id="charge-h">T2 de 46 m²</h1>
     <p id="charge-p">Domaine Capeyron, Mérignac</p>
     <div class="barre"><i id="charge-barre"></i></div>
@@ -38,6 +41,6 @@
   <div class="legal" id="charge-legal">Visite indicative, non contractuelle</div>
 </div>
 <noscript><p style="position:fixed;inset:auto 0 40% 0;text-align:center;color:#fff8ef;font:15px system-ui">Cette visite a besoin de JavaScript.</p></noscript>
-<script type="module" src="../../app3/visite3.mjs?v=755470e2"></script>
+<script type="module" src="../../app3/visite3.mjs?v=86e1a677"></script>
 </body>
 </html>

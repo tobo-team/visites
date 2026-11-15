@@ -221,8 +221,9 @@ async function demarrer() {
   const canvas = $("c");
   let renderer;
   try {
-    if (!canvas.getContext("webgl2", { antialias: true, powerPreference: "high-performance", stencil: false })) throw new Error("webgl2");
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance", stencil: false });
+    const AA = Q.has("aa") ? Q.get("aa") !== "0" : true;
+    if (!canvas.getContext("webgl2", { antialias: AA, powerPreference: "high-performance", stencil: false })) throw new Error("webgl2");
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: AA, powerPreference: "high-performance", stencil: false });
   } catch (e) { repli(T.sansWebgl); throw new Error("WebGL indisponible"); }
   const mobile = matchMedia("(pointer: coarse)").matches || Math.min(screen.width, screen.height) < 700;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -266,8 +267,8 @@ async function demarrer() {
   renderer.toneMappingExposure = 1;
   // Densité de pixels : 2 au plus sur ordinateur, 1,5 sur téléphone (un écran à 3 dessinait 4 fois plus de pixels pour une différence à peine visible).
   // Si les images restent lentes pendant qu'on bouge, on descend par quarts jusqu'à 1 (voir lenteur()).
-  let dpr = Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2), lentes = 0, baisse = false;
-  renderer.setPixelRatio(dpr); etat.dpr = dpr;
+  let dpr = Q.has("dpr") ? +Q.get("dpr") || 1 : Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2), lentes = 0, baisse = false;
+  renderer.setPixelRatio(dpr); etat.dpr = dpr; etat.densite = dpr;
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.setClearColor(0x0c0a08, 1);
   const TMAX = renderer.capabilities.maxTextureSize;
@@ -280,6 +281,18 @@ async function demarrer() {
   camera.rotation.order = "YXZ";
   const dessusCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   let zoom = 1;
+  // Deux densités de pixels. Le temps de carte graphique suit le nombre de pixels calculés (mesuré sur un Mac M3, 1728 x 1000 points : 23 à 35 ms
+  // par image à densité 2, 10 ms à densité 1,1), et à pleine densité Retina un grand écran ne tient pas 60 images par seconde.
+  //   en mouvement : la toile est calculée avec BUDGET pixels au plus et étirée par le navigateur ; à cette vitesse l'œil ne voit pas la différence ;
+  //   à l'arrêt    : 140 ms après la dernière image, elle est recalculée une fois à pleine densité, nette.
+  // Changer de taille coûte 4 ms au départ d'un mouvement et une image de 30 ms à l'arrêt (mesuré), où elle ne se voit pas.
+  let budget = +Q.get("budget") || 2.0e6, densite = dpr, affinage = 0;
+  const densiteMvt = (k = 1) => Math.min(dpr, Math.max(mobile ? 0.9 : 1, Math.sqrt(budget * k / (innerWidth * innerHeight))));
+  function regler(mvt, force = false) {
+    const d = mvt ? densiteMvt(balade && !marche ? 1.7 : 1) : dpr;      // la rotation lente d'accueil garde plus de pixels : c'est la première image que l'on voit if (!force && Math.abs(d - densite) < 0.02) return false;
+    densite = d; etat.densite = +d.toFixed(2); renderer.setPixelRatio(d); renderer.setSize(innerWidth, innerHeight, false); return true;
+  }
+  function affiner() { clearTimeout(affinage); affinage = setTimeout(() => { if (marche || fondu || balade || touches.size || (prise && prise.tire) || etat.dessus) return; if (regler(false)) dessiner(); }, 140); }
   function cadrer() {
     const w = innerWidth, h = innerHeight, a = w / h;
     renderer.setSize(w, h, false);
@@ -337,9 +350,9 @@ async function demarrer() {
       + "#endif\n\t\t}\n"
       + "\t\tlightMapIrradiance = mix( vec3( dot( lightMapIrradiance, vec3( 0.2126, 0.7152, 0.0722 ) ) ), lightMapIrradiance, v3Sat ) * v3Chaud;\n"
       + "\t\t{ float v3l = dot( lightMapIrradiance, vec3( 0.2126, 0.7152, 0.0722 ) ); if ( v3Genou > 0.0 && v3l > v3Genou ) { float v3e = v3l - v3Genou; lightMapIrradiance *= ( v3Genou + v3e / ( 1.0 + v3e / v3Genou ) ) / v3l; } }\n"
-      + "\t\tv3occ = mix( clamp( dot( lightMapIrradiance, vec3( 0.3333 ) ) * v3Occ, 0.0, 1.0 ), 1.0, smoothstep( 0.9, 1.0, metalnessFactor ) );\n\t\tv3occ *= mix( 1.0, mix( 0.3, 1.0, smoothstep( 0.9, 1.0, metalnessFactor ) ), smoothstep( 0.3, 0.6, roughnessFactor ) );")
+      + "#ifdef STANDARD\n\t\tv3occ = mix( clamp( dot( lightMapIrradiance, vec3( 0.3333 ) ) * v3Occ, 0.0, 1.0 ), 1.0, smoothstep( 0.9, 1.0, metalnessFactor ) );\n\t\tv3occ *= mix( 1.0, mix( 0.3, 1.0, smoothstep( 0.9, 1.0, metalnessFactor ) ), smoothstep( 0.3, 0.6, roughnessFactor ) );\n#endif\n")
     .replace("irradiance += lightMapIrradiance;", "#ifdef V3_COQUE\n\t\tif ( v3DansBalcon( v3Marge ) ) {\n#ifdef V3_PLAFOND\n\t\t\tv3occ = 0.0;\n#else\n\t\t\tv3occ *= 1.0 - v3Ext;\n#endif\n\t\t}      // enduit mat : pas de reflet de l'image d'environnement (elle est tachée)\n#endif\n\t\tirradiance += lightMapIrradiance;")
-    .replace(A3, "").replace(A4, "radiance += getIBLRadiance( geometryViewDir, geometryNormal, material.roughness ) * v3occ;");
+    .replace(A3, "").replace(A4, "#ifndef V3_MAT\n\t\tradiance += getIBLRadiance( geometryViewDir, geometryNormal, material.roughness ) * v3occ;\n#endif");
   const BLOC_SANS = SRC.replace(A3, "");
   // v3Lire : lecture de la carte. Pour une matière « lissée » (sol du balcon), moyenne de 17 lectures sur un disque : la nuit sa carte est
   // tachée (peu de lumière, beaucoup de bruit), et un sol extérieur n'a pas de détail fin à perdre. Le rayon suit l'ambiance (nul de jour).
@@ -387,9 +400,16 @@ async function demarrer() {
     [/^Noir$/, 0.001], [/^Enduit de facade k0\.3$/, 0.001], [/^(Seuil|Plinthe)/, 0.0008], [/^(Chene|Tete de lit)/, 0.0004]];
   const decal = (nom) => { for (const [re, v] of DECALS) { const r = re.exec(nom || ""); if (r) return typeof v === "function" ? v(+r[1]) : v; } return 0; };
   const DECALER = (sh, d) => { sh.uniforms.v3Decal = d; sh.vertexShader = "uniform float v3Decal;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n\ttransformed += normalize( objectNormal ) * v3Decal;"); };
+  const DOUBLES = /^(Porte|Alu anthracite|Noir$|Papier|Plinthe|Laque blanche mate|Enduit de facade|Coupe de mur|Rideau)/;
   function brancherCarte(m, atlas, d = 0) {
     const u = { value: null }, ud = { value: d }; cartesB.set(m, { u, atlas });
-    const dessous = !(m.alphaTest > 0) && !m.transparent;      // une feuille vue de dos reste une feuille
+    // Un seul côté dessiné partout où c'est possible. Rejeter les faces vues de dos DANS le nuanceur (discard) empêche la carte graphique d'écarter
+    // d'avance les surfaces cachées : elle calculait toutes les couches superposées, 9 ms par image sur un grand écran Retina (mesuré). Relevé sur
+    // 48 vues, matière par matière : seules celles de DOUBLES (et les petits objets de l'atlas c) ont des faces réellement vues de dos ; elles gardent
+    // les deux côtés et le rejet. Toutes les autres (murs, sols, plafonds, gros meubles) passent en face avant, sans rejet. ?faces=2 : ancien mode.
+    const unCote = Q.get("faces") !== "2" && atlas !== "c" && !DOUBLES.test(m.name) && !(m.alphaTest > 0) && !m.transparent;
+    if (unCote) { m.side = THREE.FrontSide; etat.unCote = (etat.unCote || 0) + 1; }
+    const dessous = !unCote && !(m.alphaTest > 0) && !m.transparent;      // une feuille vue de dos reste une feuille
     m.onBeforeCompile = (sh) => { sh.uniforms.v3CarteB = u; sh.uniforms.v3ForceB = uForceB; sh.uniforms.v3Melange = uMelange; sh.uniforms.v3Occ = uOcc; sh.uniforms.v3Lisse = uLisse;
       sh.uniforms.v3Chaud = atlas === "a" ? uChaudA : uChaudB; sh.uniforms.v3Sat = atlas === "a" ? uSatA : UN; sh.uniforms.v3Genou = uGenou; sh.uniforms.v3Balcon = uBalcon; Object.assign(sh.uniforms, uSpot); ton(sh); DECALER(sh, ud);
       sh.vertexShader = "varying vec3 v3Monde;\nvarying vec3 v3NMonde;\n" + sh.vertexShader.replace("#include <project_vertex>", "#include <project_vertex>\n\tv3Monde = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;\n\tv3NMonde = mat3( modelMatrix ) * objectNormal;");
@@ -397,7 +417,9 @@ async function demarrer() {
     const lisse = LISSES.test(m.name), k = 1, coque = COQUES.test(m.name);
     m.defines = { ...(m.defines || {}), ...(lisse ? { V3_LISSE: "", V3_LISSE_K: k.toFixed(2) } : {}), ...(dessous ? { V3_DESSOUS: "" } : {}), ...(coque ? { V3_COQUE: "" } : {}), ...(/^Plafond/.test(m.name) ? { V3_PLAFOND: "" } : {}) };
     if (coque) m.dithering = true;      // dégradé lisse sans marches de 8 bits
-    const cle = "v3-carte" + (lisse ? "-lisse" + k : "") + (dessous ? "-dessous" : "") + (coque ? "-coque" : "") + (/^Plafond/.test(m.name) ? "-plafond" : "");
+    const mat = Q.get("mat") !== "0" && m.roughness >= 0.8 && !m.roughnessMap && !m.metalnessMap && !(m.metalness > 0) && !(m.clearcoat > 0);
+    if (mat) { m.defines.V3_MAT = ""; etat.mats = (etat.mats || 0) + 1; }
+    const cle = "v3-carte" + (lisse ? "-lisse" + k : "") + (dessous ? "-dessous" : "") + (coque ? "-coque" : "") + (/^Plafond/.test(m.name) ? "-plafond" : "") + (mat ? "-mat" : "");
     m.customProgramCacheKey = () => cle;
   }
   function brancherVerre(m) {
@@ -439,6 +461,14 @@ async function demarrer() {
   const emissifs = [], dehorsMat = [];
   const blanc = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); blanc.colorSpace = THREE.SRGBColorSpace; blanc.needsUpdate = true;
   function extra(o, cle) { for (let n = o; n; n = n.parent) if (n.userData && n.userData[cle] != null) return n.userData[cle]; return o.material?.userData?.[cle] ?? o.geometry?.userData?.[cle]; }
+  // Matière légère pour les surfaces mates (murs, plafonds, tissus : la majorité de l'écran). Tout y est cuit : couleur x carte de lumière.
+  // Le calcul physique complet (reflets d'environnement, relief, rugosité) n'y apporte rien de visible et coûte l'essentiel du temps de la carte
+  // graphique. ?lite=0 : tout en matière physique, comme avant.
+  const estMat = (m) => Q.get("lite") !== "0" && m.isMeshStandardMaterial && m.roughness >= 0.8 && !m.roughnessMap && !m.metalnessMap && !(m.metalness > 0) && !(m.clearcoat > 0) && !(m.transmission > 0) && !m.transparent;
+  function enLeger(b) {
+    const m = new THREE.MeshLambertMaterial({ color: b.color.clone(), map: b.map, side: b.side, alphaTest: b.alphaTest, emissive: b.emissive.clone(), emissiveIntensity: b.emissiveIntensity, emissiveMap: b.emissiveMap });
+    m.name = b.name; m.userData = b.userData; etat.legers = (etat.legers || 0) + 1; return m;
+  }
   function alleger(m) {      // le vernis reste (céramique, écran), le velours part : sans lumière directe il ne se voit pas et coûte cher sur téléphone
     if (!m.isMeshPhysicalMaterial || m.clearcoat > 0 || m.transmission > 0 || m.iridescence > 0) return m.clone();
     const s = new THREE.MeshStandardMaterial(); s.copy(m); return s;
@@ -452,7 +482,7 @@ async function demarrer() {
       if (variantes.has(cle)) { o.material = variantes.get(cle); return; }
       let m;
       if (lm && sc.cartes[lm]) {
-        m = alleger(base); m.lightMapIntensity = echelle(amb); brancherCarte(m, lm, decal(base.name));
+        m = estMat(base) ? enLeger(base) : alleger(base); m.lightMapIntensity = echelle(amb); brancherCarte(m, lm, decal(base.name));
         attente.push(carte(lm, amb).then((t) => { m.lightMap = t; cartesB.get(m).u.value = t; m.needsUpdate = true; }));
         if (m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0) emissifs.push({ m, nom: base.name, base: m.emissiveIntensity });
       } else if (role === "verre") {
@@ -717,7 +747,8 @@ void main() {
         const U = (k) => [u1.getX(i[k]), u1.getY(i[k])], ua = U(hauts[0]), ub = U(hauts[1]), uc = U(bas), d = Math.min(0.03, -dy * 0.5);
         const gy = [0, 1].map((q) => (uc[q] - ua[q] - sc2 * (ub[q] - ua[q])) / dy);      // variation des coordonnées de carte par mètre de hauteur
         for (const [q, u, y] of [[a, ua, ym - 0.002], [b, ub, ym - 0.002], [b, ub, HAUT], [a, ua, HAUT]]) { pos.push(q.x, y, q.z); nor.push(N.x, 0, N.z); uv.push(0, 0); uvb.push(u[0] - d * gy[0], u[1] - d * gy[1]); }
-        ind.push(k0, k0 + 1, k0 + 2, k0, k0 + 2, k0 + 3);
+        const sens = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3(0, 1, 0)).dot(N) > 0;      // (b - a) x haut : normale du quadrilatère tel qu'enroulé
+        if (sens) ind.push(k0, k0 + 1, k0 + 2, k0, k0 + 2, k0 + 3); else ind.push(k0, k0 + 2, k0 + 1, k0, k0 + 3, k0 + 2);
       }
       if (!ind.length) return;
       const g2 = new THREE.BufferGeometry(); g2.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g2.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
@@ -1026,15 +1057,14 @@ void main() {
   // ---------------------------------------------------------------- boucle : une image seulement quand quelque chose bouge
   let enAttente = false, dernier = 0, bouge = 0;      // bouge : instant de la dernière image demandée, donc de la dernière activité
   function demander() { bouge = performance.now(); if (enAttente) return; enAttente = true; requestAnimationFrame(tic); }
-  function tic(t) { enAttente = false; const suite = !!dernier, dt = dernier ? Math.min(0.1, (t - dernier) / 1000) : 1 / 60; dernier = t; if (suite) lenteur(dt); const actif = avancer(dt); dessiner(); if (actif) demander(); else dernier = 0; }
+  function tic(t) { enAttente = false; const suite = !!dernier, dt = dernier ? Math.min(0.1, (t - dernier) / 1000) : 1 / 60; dernier = t; if (suite) lenteur(dt); const actif = avancer(dt), mvt = !etat.dessus && (actif || !!(prise && prise.tire)); if (mvt) regler(true); dessiner(); if (actif) demander(); else { dernier = 0; affiner(); } }
   // 20 images de plus de 24 ms (moins de 42 images par seconde) pendant un mouvement continu : un quart de densité en moins, une fois pour toutes
   function lenteur(dt) {
     lentes = dt > 0.024 ? lentes + 1 : Math.max(0, lentes - 2);
-    if (lentes < 20 || dpr <= 1 || baisse) return;
-    // changer de densité réalloue les images : fait en pleine marche, c'était une saccade de plus. On attend que le visiteur s'arrête.
+    if (lentes < 20 || budget <= 0.8e6 || baisse) return;
+    // encore lent malgré l'image allégée : on abaisse le budget du mouvement d'un quart, une fois le visiteur arrêté
     baisse = true; lentes = 0;
-    calme(150).then(() => { baisse = false; dpr = Math.max(1, dpr - 0.25); etat.dpr = dpr; renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight, false);
-      for (const m of miroirs) m.r.getRenderTarget().setSize(...tailleMiroir()); demander(); });
+    calme(150).then(() => { baisse = false; budget = Math.max(0.8e6, budget * 0.75); etat.budget = Math.round(budget); });
   }
   function deplacer(dx, dz) {
     const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.03)); dx /= n; dz /= n;
@@ -1138,8 +1168,7 @@ void main() {
   const rayon = new THREE.Vector3();
   function viser(cx, cy) {
     if (etat.dessus) return null;
-    const r = canvas.getBoundingClientRect();
-    rayon.set((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height) * 2 + 1, 0.5).unproject(camera).sub(camera.position).normalize();
+    rayon.set(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1, 0.5).unproject(camera).sub(camera.position).normalize();
     const ox = pos.x, oy = OEIL, oz = pos.z, dx = rayon.x, dy = rayon.y, dz = rayon.z;
     let tSol = dy < -0.02 ? -oy / dy : Infinity, tBoite = Infinity;
     for (const b of obst3) {
@@ -1236,7 +1265,7 @@ void main() {
   // Image du mini-plan : un rendu orthographique vertical cadré exactement sur `limites`, pris dans la toile le temps d'une image (rien ne s'affiche entre-temps).
   function imageDessus() {
     const W = limites[2] - limites[0], D = limites[3] - limites[1], w = 1024, h = Math.round(w * D / W), pr = renderer.getPixelRatio(), avant = etat.dessus;
-    renderer.setPixelRatio(1); renderer.setSize(w, h, false);
+    clearTimeout(affinage); renderer.setPixelRatio(1); renderer.setSize(w, h, false);
     dessusCam.left = -W / 2; dessusCam.right = W / 2; dessusCam.top = D / 2; dessusCam.bottom = -D / 2; dessusCam.updateProjectionMatrix();
     dessusCam.position.set((limites[0] + limites[2]) / 2, 60, (limites[1] + limites[3]) / 2); dessusCam.up.set(0, 0, -1); dessusCam.lookAt(dessusCam.position.x, 0, dessusCam.position.z); dessusCam.updateMatrixWorld();
     etat.dessus = { plan: true }; const e = expoCible(); renderer.toneMappingExposure = e; uPose.value = e;
@@ -1244,7 +1273,7 @@ void main() {
     const cv0 = ciel.visible, rv = repere.visible; ciel.visible = false; repere.visible = false; for (const m of miroirs) m.r.visible = false;
     renderer.render(scene, dessusCam);
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.getContext("2d").drawImage(renderer.domElement, 0, 0);
-    etat.dessus = avant; ciel.visible = cv0; repere.visible = rv; renderer.setPixelRatio(pr);
+    etat.dessus = avant; ciel.visible = cv0; repere.visible = rv; renderer.setPixelRatio(dpr); densite = dpr;
     if (avant) vueDessus(true); else { renderer.clippingPlanes = [COUPE_BAS]; renderer.setClearColor(0x0c0a08, 1); cadrer(); dessiner(); }
     return cv;
   }
@@ -1255,7 +1284,7 @@ void main() {
   function vueDessus(oui) {
     if (oui) { cadrerDessus(); renderer.clippingPlanes = [COUPE_BAS, new THREE.Plane(new THREE.Vector3(0, -1, 0), H - 0.03)]; ciel.visible = false; repere.visible = false; renderer.setClearColor(0xefece6, 1); }
     else { etat.dessus = null; renderer.clippingPlanes = [COUPE_BAS]; ciel.visible = true; renderer.setClearColor(0x0c0a08, 1); }
-    expo = expoCible(); dessiner(); return etat.dessus;
+    regler(false, true); expo = expoCible(); dessiner(); return etat.dessus;
   }
 
   // ---------------------------------------------------------------- interface
@@ -1285,23 +1314,26 @@ void main() {
     const L = plan.limites || limites, W = L[2] - L[0], D = L[3] - L[1], f = (n) => +n.toFixed(3), pts = (poly) => poly.map((p) => f(p[0]) + "," + f(p[1])).join(" ");
     const ech = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     const surf = (p) => (p.surface ? `${nombre(p.surface)} m²` : "");
-    let s = `<svg viewBox="${f(L[0])} ${f(L[1])} ${f(W)} ${f(D)}" role="img" aria-label="${T.plan}"><defs><radialGradient id="v3cone" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1.9"><stop offset="0" stop-color="#e2842c" stop-opacity=".85"/><stop offset=".55" stop-color="#e2842c" stop-opacity=".4"/><stop offset="1" stop-color="#e2842c" stop-opacity="0"/></radialGradient></defs>`;
+    let s = `<svg viewBox="${f(L[0])} ${f(L[1])} ${f(W)} ${f(D)}" role="img" aria-label="${T.plan}">`;
     // fond : la scène elle-même vue du dessus (plafonds masqués), posée sur la même projection que les pièces, les points et le cône
     s += `<image class="vue" x="${f(L[0])}" y="${f(L[1])}" width="${f(W)}" height="${f(D)}" preserveAspectRatio="none"/>`;
     for (const p of plan.pieces) s += `<polygon class="piece${p.exterieur ? " ext" : ""}" data-id="${ech(p.id)}" points="${pts(p.poly)}"><title>${ech(p.nom)}${p.surface ? " · " + surf(p) : ""}</title></polygon>`;
     for (const p of plan.pieces) { const t = borne(Math.sqrt(p.surface || 6) * 0.085, 0.2, 0.34);
       s += `<text class="etiq" x="${f(p.centre[0])}" y="${f(p.centre[1])}" font-size="${f(t)}"><tspan class="n" x="${f(p.centre[0])}" dy="${f(-t * 0.12)}">${ech(p.nom)}</tspan>${p.surface ? `<tspan class="s" x="${f(p.centre[0])}" dy="${f(t * 1.08)}" font-size="${f(t * 0.8)}">${surf(p)}</tspan>` : ""}</text>`; }
     V.pieces.forEach((p, i) => { s += `<circle class="pt" data-i="${i}" cx="${f(p.x)}" cy="${f(p.z)}" r="0.09"/>`; });
-    s += `<clipPath id="v3rogne"><polygon points=""/></clipPath><g clip-path="url(#v3rogne)"><g class="moi cone-g"><path class="cone" fill="url(#v3cone)" d=""/></g></g><g class="moi"><circle class="rond" r="0.16"/></g></svg>`;
+    s += `</svg><div class="moi-html"><div class="rogne"><div class="cone"></div></div><div class="rond"></div></div>`;
     planEl.innerHTML = `<div class="fond">${s}</div><div class="legende"><b></b><span></span></div><button class="taille" type="button"><svg class="ouvrir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg><svg class="fermer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7"/></svg></button>`;
     planEl.hidden = false;
-    const svg = planEl.querySelector("svg"), moiC = svg.querySelector(".cone-g"), moi = svg.querySelector(".moi:not(.cone-g)"), cone = svg.querySelector(".cone"), rond = moi.querySelector(".rond"), rogne = svg.querySelector("#v3rogne polygon"), leg = planEl.querySelector(".legende"), bt = planEl.querySelector(".taille");
+    const svg = planEl.querySelector("svg"), cone = planEl.querySelector(".moi-html .cone"), rond = planEl.querySelector(".moi-html .rond"), rogne = planEl.querySelector(".moi-html .rogne"), leg = planEl.querySelector(".legende"), bt = planEl.querySelector(".taille");
     const zones = [...svg.querySelectorAll(".piece")], ptsEl = [...svg.querySelectorAll(".pt")];
     let survol = null, typePointeur = "mouse";
     const legende = () => { const p = plan.pieces.find((q) => q.id === (survol || pieceId)); // une pièce à plusieurs points (séjour cuisine) affiche le nom du point où l'on se tient : Salon et Cuisine n'ont pas le même cartouche
       const ici = !survol && p?.points?.length > 1 && V.pieces[pointIci]?.piece === p.id ? V.pieces[pointIci].nom : null;
       leg.firstChild.textContent = ici || p?.nom || ""; leg.lastChild.textContent = p ? surf(p) : ""; };
-    const tailles = () => { const k = W / (svg.clientWidth || 236); rond.setAttribute("r", f(Math.max(0.1, 5 * k))); for (const c of ptsEl) c.setAttribute("r", f(Math.max(0.05, 2.6 * k))); };
+    let kpx = 1;      // pixels d'écran par mètre de plan
+    const tailles = () => { const lw = svg.clientWidth || 236, k = W / lw; kpx = lw / W; for (const c of ptsEl) c.setAttribute("r", f(Math.max(0.05, 2.6 * k)));
+      const Rp = 1.9 * kpx; cone.style.width = cone.style.height = (2 * Rp).toFixed(1) + "px"; cone.style.margin = (-Rp).toFixed(1) + "px"; dernierMoi = ""; majMoi(); };
+    let dernierMoi = "", dernierDh = "";
     const grand = (oui) => { planEl.classList.toggle("grand", oui); bt.setAttribute("aria-label", oui ? T.reduire : T.agrandir); bt.title = oui ? T.reduire : T.agrandir; };
     grand(false); new ResizeObserver(tailles).observe(svg); tailles();
     planEl.addEventListener("pointerdown", (e) => { typePointeur = e.pointerType || "mouse"; }, true);
@@ -1321,16 +1353,16 @@ void main() {
       if (typePointeur !== "mouse") grand(false);
     });
     surPiece = () => { for (const z of zones) z.classList.toggle("ici", z.dataset.id === pieceId); legende();
-      const p = plan.pieces.find((q) => q.id === pieceId); if (p) rogne.setAttribute("points", pts(p.poly)); };      // le cône s'arrête aux murs de la pièce, il ne passe ni dans la voisine ni hors du cadre
+      const p = plan.pieces.find((q) => q.id === pieceId); if (p) rogne.style.clipPath = "polygon(" + p.poly.map((q) => ((q[0] - L[0]) / W * 100).toFixed(2) + "% " + ((q[1] - L[1]) / D * 100).toFixed(2) + "%").join(",") + ")"; };      // le cône s'arrête aux murs de la pièce, il ne passe ni dans la voisine ni hors du cadre
     planEl.v3legende = legende;
     const vue = svg.querySelector(".vue");
     let urlVue = null; planEl.v3vue = () => { try { imageDessus().toBlob((b) => { if (!b) return; const u = URL.createObjectURL(b); vue.setAttribute("href", u); if (urlVue) URL.revokeObjectURL(urlVue); urlVue = u; }, "image/jpeg", 0.86); } catch (e) { etat.erreurs.push("plan : " + (e.message || e)); } };      // encodage hors du fil principal
-    let dernierMoi = "";
     majMoi = () => {
-      const dh = Math.atan(Math.tan(rad(camera.fov) / 2) * camera.aspect), R = 1.9, cle = `${pos.x.toFixed(3)} ${pos.z.toFixed(3)} ${yaw.toFixed(3)} ${dh.toFixed(3)}`;
+      const dh = Math.atan(Math.tan(rad(camera.fov) / 2) * camera.aspect), cle = `${pos.x.toFixed(3)} ${pos.z.toFixed(3)} ${yaw.toFixed(3)}`, cd = dh.toFixed(3);
+      if (cd !== dernierDh) { dernierDh = cd; const m = `conic-gradient(from ${(-dh).toFixed(3)}rad, #000 0 ${(2 * dh).toFixed(3)}rad, transparent 0)`; cone.style.webkitMaskImage = m; cone.style.maskImage = m; }
       if (cle === dernierMoi) return; dernierMoi = cle;
-      const tr = `translate(${f(pos.x)} ${f(pos.z)}) rotate(${f(deg(yaw))})`; moi.setAttribute("transform", tr); moiC.setAttribute("transform", tr);      // 0° = nord = haut du plan, sens des aiguilles d'une montre
-      cone.setAttribute("d", `M0 0L${f(-Math.sin(dh) * R)} ${f(-Math.cos(dh) * R)}A${R} ${R} 0 0 1 ${f(Math.sin(dh) * R)} ${f(-Math.cos(dh) * R)}Z`);
+      const t = `translate(${((pos.x - L[0]) * kpx).toFixed(1)}px, ${((pos.z - L[1]) * kpx).toFixed(1)}px)`;      // 0° = nord = haut du plan, sens des aiguilles d'une montre
+      rond.style.transform = t; cone.style.transform = t + ` rotate(${deg(yaw).toFixed(1)}deg)`;
     };
   }
   if (aideEl) aideEl.textContent = mobile ? T.aideDoigt : T.aideSouris;
@@ -1358,13 +1390,14 @@ void main() {
   dessiner();
   planEl?.v3vue?.();
   suivi.actif = false; etat.pret = true; chargeEl?.classList.add("fini");
+  setTimeout(() => chargeEl?.remove(), 1000);      // sinon il reste posé sur la 3D, invisible mais flouté, et le navigateur le recompose à chaque image
   surPoint(); surPiece();
   if (!sansUi && !Q.has("piece") && !Q.has("lacet") && !sansAnimation) { balade = { t: 0 }; demander(); }
   setTimeout(finAide, 9000);
   // les reflets des autres pièces arrivent ensuite, sans bloquer l'ouverture
   // Travaux de fond (hors téléphone, question de mémoire) : toute la seconde ambiance, cartes puis reflets, un élément à la fois et seulement
   // après 1,2 s sans aucun mouvement : le passage jour / nuit ne charge alors plus rien, et rien ne tombe pendant un déplacement.
-  if (v3) (async () => {
+  if (v3 && Q.get("fond") !== "0") (async () => {      // ?fond=0 : pas de travaux de fond (mesures)
     const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
     try {
       if (mobile) return;
@@ -1376,8 +1409,8 @@ void main() {
 
   Object.assign(api, {
     aller, ambiance: changerAmbiance, vueDessus,
-    regarder(lacetDeg, tangageDeg) { balade = null; vy = vp = 0; viseLacet = visePitch = null; if (marche) marche.libre = true; if (lacetDeg != null) yaw = rad(lacetDeg); if (tangageDeg != null) pitch = rad(tangageDeg); dessiner(); return etat; },
-    rendre() { dessiner(); return etat; },
+    regarder(lacetDeg, tangageDeg) { balade = null; vy = vp = 0; viseLacet = visePitch = null; if (marche) marche.libre = true; if (lacetDeg != null) yaw = rad(lacetDeg); if (tangageDeg != null) pitch = rad(tangageDeg); regler(false); dessiner(); return etat; },
+    rendre(mvt = false) { regler(mvt); dessiner(); return etat; },
     // outil : le cap le plus dégagé autour d'un cap voulu (pour ne pas capturer un mur à 20 cm)
     regardOuvert(lacetDeg) { const l = rad(lacetDeg); if (Math.min(portee(pos.x, pos.z, l), ouverture(pos.x, pos.z, l)) >= 1.6) return lacetDeg; let m = l, note = -1;
       for (let k = -6; k <= 6; k++) { const c = l + k * Math.PI / 12, n = ouverture(pos.x, pos.z, c) * (1 + 0.15 * Math.cos(c - l)); if (n > note) { note = n; m = c; } } return +((deg(m) % 360 + 360) % 360).toFixed(1); },
