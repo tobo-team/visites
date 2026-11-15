@@ -74,14 +74,17 @@ async function json(nom, facultatif = false) {
   catch (e) { if (facultatif) return null; throw e; }
 }
 // Image décodée hors du fil principal quand le navigateur le permet (comme GLTFLoader : pas sur Safari), retournée et réduite à la demande.
+const OPT = { premultiplyAlpha: "none", colorSpaceConversion: "none" };      // ni prémultiplication ni conversion de couleur au décodage
 const PAR_BITMAP = typeof createImageBitmap === "function" && !/^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 async function image(blob, { retourner = false, plafond = 0, exact = null } = {}) {
   const cible = (w, h) => exact ? exact : (plafond && Math.max(w, h) > plafond) ? [Math.round(w * plafond / Math.max(w, h)), Math.round(h * plafond / Math.max(w, h))] : null;
   if (PAR_BITMAP) {
     try {
-      let b = await createImageBitmap(blob, retourner ? { imageOrientation: "flipY" } : undefined);
+      // Sans prémultiplication ni conversion de couleur : sinon le navigateur convertit l'image au moment de l'envoi à la carte graphique,
+      // sur le fil principal (jusqu'à 1 s de blocage mesuré pour une carte de 4096).
+      let b = await createImageBitmap(blob, { ...OPT, imageOrientation: retourner ? "flipY" : "none" });
       const c = cible(b.width, b.height);
-      if (c && (c[0] !== b.width || c[1] !== b.height)) { const b2 = await createImageBitmap(b, { resizeWidth: c[0], resizeHeight: c[1], resizeQuality: "high" }); b.close(); b = b2; }
+      if (c && (c[0] !== b.width || c[1] !== b.height)) { const b2 = await createImageBitmap(b, { ...OPT, resizeWidth: c[0], resizeHeight: c[1], resizeQuality: "high" }); b.close(); b = b2; }
       return { image: b, flipY: false };
     } catch (e) { /* repli ci-dessous */ }
   }
@@ -237,11 +240,14 @@ async function demarrer() {
   // Réglages par ambiance. Jour : la lumière des murs sortait bleutée (rouge/bleu 0,83 au 90e centile de l'atlas a) et brûlait près des baies.
   // On la réchauffe, on adoucit les hautes lumières par un genou (asymptote à deux fois le seuil), on pose un peu plus court et on baisse le contraste.
   const REGLAGES = {
-    jour: { chaudA: [1.0, 0.925, 0.80], chaudB: [1.0, 0.965, 0.9], genou: 0.5 * Math.PI, contraste: 1.0, saturation: 1.04, pose: 0.88, lumiere: 0.45 },
-    nuit: { chaudA: [1, 1, 1], chaudB: [1, 1, 1], genou: 0, contraste: look[0], saturation: look[1], pose: 1, lumiere: 1 },
+    jour: { chaudA: [1.0, 0.93, 0.82], satA: 0.4, chaudB: [1.0, 0.965, 0.9], genou: 0.5 * Math.PI, contraste: 1.0, saturation: 1.04, pose: 0.88, lumiere: 0.45 },
+    nuit: { chaudA: [1, 1, 1], satA: 1, chaudB: [1, 1, 1], genou: 0, contraste: look[0], saturation: look[1], pose: 1, lumiere: 1 },
   };
   const reglage = (a) => REGLAGES[a] || REGLAGES.nuit;
   const uContraste = { value: reglage(amb).contraste }, uSaturation = { value: reglage(amb).saturation };
+  // Vert gris des murs à l'ombre : leur lumière vient du ciel, elle est bleutée, et la réchauffer en baissant le bleu donnait du vert (bleu gris x jaune).
+  // De jour la lumière des murs et plafonds est d'abord ramenée vers le gris (satA), puis teintée chaud : beige neutre partout, jamais de vert.
+  const uSatA = { value: reglage(amb).satA }, UN = { value: 1 };
   const uChaudA = { value: new THREE.Vector3(...reglage(amb).chaudA) }, uChaudB = { value: new THREE.Vector3(...reglage(amb).chaudB) }, uGenou = { value: reglage(amb).genou };
   const ton = (sh) => { sh.uniforms.v3Contraste = uContraste; sh.uniforms.v3Saturation = uSaturation; };
   // Les petites pièces sombres étaient posées jusqu'à 1,32 fois le séjour : sur écran leurs blancs brûlent (salle d'eau). On plafonne l'écart au séjour.
@@ -257,13 +263,13 @@ async function demarrer() {
   renderer.toneMappingExposure = 1;
   // Densité de pixels : 2 au plus sur ordinateur, 1,5 sur téléphone (un écran à 3 dessinait 4 fois plus de pixels pour une différence à peine visible).
   // Si les images restent lentes pendant qu'on bouge, on descend par quarts jusqu'à 1 (voir lenteur()).
-  let dpr = Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2), lentes = 0;
+  let dpr = Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2), lentes = 0, baisse = false;
   renderer.setPixelRatio(dpr); etat.dpr = dpr;
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.setClearColor(0x0c0a08, 1);
   const TMAX = renderer.capabilities.maxTextureSize;
   const PLAFOND_CARTE = Math.min(TMAX, mobile ? 2048 : 4096), PLAFOND_CIEL = Math.min(TMAX, mobile ? 4096 : 8192);
-  const TAILLE_ENV = mobile ? [1024, 512] : [2048, 1024];      // même taille pour toutes les pièces : sinon chaque changement de pièce recompile les matières
+  const TAILLE_ENV = [1024, 512];      // les panoramas livrés font 1024 x 512 : les agrandir quadruplait le calcul pour rien      // même taille pour toutes les pièces : sinon chaque changement de pièce recompile les matières
   const ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy());
 
   const scene = new THREE.Scene();
@@ -305,17 +311,70 @@ async function demarrer() {
     .replace(A1, "vec3 v3a = v3Lire( lightMap, vLightMapUv ) * lightMapIntensity;\n\t\tvec3 v3b = v3Lire( v3CarteB, vLightMapUv ) * v3ForceB;")
     .replace(A2, "vec3 lightMapIrradiance = mix( v3a, v3b, v3Melange );\n"
       + "#ifdef V3_DESSOUS\n\t\tif ( ! gl_FrontFacing && dot( lightMapIrradiance, vec3( 0.3333 ) ) < 0.0125 ) discard;\n#endif\n"
-      + "\t\tlightMapIrradiance *= v3Chaud;\n"
+      // Balcon de nuit : la carte des enduits, du plafond de la loggia et de la paroi vitrée porte de grandes taches basses fréquences laissées par le
+      // débruiteur (le bruit texel à texel est de 0,4 %, mesuré : aucun flou ne les enlève, il ne fait que des stries aux coutures). Sur ces seules
+      // surfaces, dans le volume du balcon, la lumière est calculée : un fond d'ambiance plus le spot du plafond (position lue dans le GLB), en loi de
+      // Lambert et carré de la distance adouci. Lisse par construction, halo conservé. v3Ext vaut 1 la nuit, 0 le jour.
+      + "#ifdef V3_PLAFOND\n\t\tfloat v3Marge = ( v3Monde.x < v3Interieur.x || v3Monde.z < v3Interieur.y || v3Monde.x > v3Interieur.z || v3Monde.z > v3Interieur.w ) ? 0.35 : 0.1;\n#else\n\t\tfloat v3Marge = 0.0;\n#endif\n\t\tif ( v3DansBalcon( v3Marge ) ) {\n\t\t\tvec3 v3n = normalize( v3NMonde ); if ( dot( v3n, cameraPosition - v3Monde ) < 0.0 ) v3n = - v3n;\n"
+      + "#ifdef V3_COQUE\n"
+      // Jour : le plafond de la loggia (et la marche de 6 cm entre le plafond du séjour et celui du balcon, et le dessous du plafond du séjour qui dépasse)
+      // reçoit un dégradé lisse mesuré sur sa carte (0,03 à 0,06, plus clair côté claustra) : plus de taches, plus de filet clair ni de bande noire.
+      + "#ifdef V3_PLAFOND\n\t\t\tif ( v3Ext < 1.0 && v3Monde.y > 2.44 && v3n.y < 0.5 ) {\n"
+      + "\t\t\t\tfloat v3j = clamp( 0.19 + 0.04 * ( v3Monde.x - 8.4 ), 0.18, 0.24 );\n"
+      + "\t\t\t\tlightMapIrradiance = mix( lightMapIrradiance, vec3( v3j * 3.14159 ), 1.0 - v3Ext );\n\t\t\t}\n#endif\n"
+      // Nuit : fond chaud, angles feutrés (assombris près du sol, du plafond et des murs perpendiculaires), halo ambré du spot, enduit minéral à grain fin.
+      + "\t\t\tif ( v3Ext > 0.0 ) {\n"
+      + "\t\t\t\tfloat v3ao = v3Angles( v3n );\n"
+      + "\t\t\t\tvec3 v3e = v3SpotCouleur * v3SpotK.x * v3ao + v3Ambre * v3SpotTerme( v3n ) * mix( 0.75, 1.0, v3ao );\n"
+      + "\t\t\t\tlightMapIrradiance = mix( lightMapIrradiance, v3e * 3.14159, v3Ext );\n"
+      + "\t\t\t\tmaterial.diffuseColor = mix( material.diffuseColor, v3Pierre, v3Ext );\n\t\t\t}\n"
+      + "#else\n"
+      // Nuit, tout le reste du balcon (sol, table, chaises, claustra) : lumière chaude d'appoint du spot, ajoutée à la carte.
+      + "\t\t\tif ( v3Ext > 0.0 ) lightMapIrradiance += v3Ext * v3Ambre * v3SpotTerme( v3n ) * 3.14159 * ( v3n.y > 0.7 ? 3.0 : 0.5 );      // sol et plateau : flaque chaude sous le spot\n"
+      + "#endif\n\t\t}\n"
+      + "\t\tlightMapIrradiance = mix( vec3( dot( lightMapIrradiance, vec3( 0.2126, 0.7152, 0.0722 ) ) ), lightMapIrradiance, v3Sat ) * v3Chaud;\n"
       + "\t\t{ float v3l = dot( lightMapIrradiance, vec3( 0.2126, 0.7152, 0.0722 ) ); if ( v3Genou > 0.0 && v3l > v3Genou ) { float v3e = v3l - v3Genou; lightMapIrradiance *= ( v3Genou + v3e / ( 1.0 + v3e / v3Genou ) ) / v3l; } }\n"
       + "\t\tv3occ = mix( clamp( dot( lightMapIrradiance, vec3( 0.3333 ) ) * v3Occ, 0.0, 1.0 ), 1.0, smoothstep( 0.9, 1.0, metalnessFactor ) );\n\t\tv3occ *= mix( 1.0, mix( 0.3, 1.0, smoothstep( 0.9, 1.0, metalnessFactor ) ), smoothstep( 0.3, 0.6, roughnessFactor ) );")
+    .replace("irradiance += lightMapIrradiance;", "#ifdef V3_COQUE\n\t\tif ( v3DansBalcon( v3Marge ) ) {\n#ifdef V3_PLAFOND\n\t\t\tv3occ = 0.0;\n#else\n\t\t\tv3occ *= 1.0 - v3Ext;\n#endif\n\t\t}      // enduit mat : pas de reflet de l'image d'environnement (elle est tachée)\n#endif\n\t\tirradiance += lightMapIrradiance;")
     .replace(A3, "").replace(A4, "radiance += getIBLRadiance( geometryViewDir, geometryNormal, material.roughness ) * v3occ;");
   const BLOC_SANS = SRC.replace(A3, "");
   // v3Lire : lecture de la carte. Pour une matière « lissée » (sol du balcon), moyenne de 17 lectures sur un disque : la nuit sa carte est
   // tachée (peu de lumière, beaucoup de bruit), et un sol extérieur n'a pas de détail fin à perdre. Le rayon suit l'ambiance (nul de jour).
-  const ENTETE = "uniform sampler2D v3CarteB;\nuniform float v3ForceB;\nuniform float v3Melange;\nuniform float v3Occ;\nuniform float v3Lisse;\nuniform vec3 v3Chaud;\nuniform float v3Genou;\n"
-    + "vec3 v3Lire( sampler2D c, vec2 uv ) {\n#ifdef V3_LISSE\n\tif ( v3Lisse <= 0.0 ) return texture2D( c, uv ).rgb;\n\tvec3 s = texture2D( c, uv ).rgb;\n"
-    + "\tfor ( int i = 0; i < 16; i ++ ) { float a = float( i ) * 2.39996, r = v3Lisse * sqrt( ( float( i ) + 0.5 ) / 16.0 ); s += texture2D( c, uv + r * vec2( cos( a ), sin( a ) ) ).rgb; }\n\treturn s / 17.0;\n#else\n\treturn texture2D( c, uv ).rgb;\n#endif\n}\n";
-  const uLisse = { value: 0 }, LISSES = /^Sol de terrasse/;
+  // Volume du balcon : les pièces extérieures de plan.json découpées en rectangles (au plus 4), élargis de 3 cm pour prendre les parois posées sur leur bord
+  // (retour de mur à côté de la baie, paroi du fond). Une face de l'intérieur ne tombe jamais dedans : la plus proche, côté séjour, est à 24 cm.
+  // Tout fragment dans ce volume reçoit le flou des matières lissées, quelle que soit sa matière (plafond de la loggia, enduit, verre).
+  const uBalcon = { value: [0, 1, 2, 3].map(() => new THREE.Vector4(1, 1, 0, 0)) };
+  {
+    const rects = [];
+    for (const p of (plan?.pieces || []).filter((q) => q.exterieur)) {
+      const zs = [...new Set(p.poly.map((q) => q[1]))].sort((a, b) => a - b), xs = [...new Set(p.poly.map((q) => q[0]))].sort((a, b) => a - b);
+      const dans = (x, z) => { let r = false; for (let i = 0, j = p.poly.length - 1; i < p.poly.length; j = i++) { const [x0, z0] = p.poly[i], [x1, z1] = p.poly[j]; if ((z0 > z) !== (z1 > z) && x < (x1 - x0) * (z - z0) / (z1 - z0) + x0) r = !r; } return r; };
+      for (let k = 0; k < zs.length - 1; k++) { const zm = (zs[k] + zs[k + 1]) / 2, ins = xs.slice(0, -1).map((x, i) => dans((x + xs[i + 1]) / 2, zm));
+        let i = 0; while (i < ins.length) { if (!ins[i]) { i++; continue; } let j = i; while (j + 1 < ins.length && ins[j + 1]) j++; rects.push([xs[i], zs[k], xs[j + 1], zs[k + 1]]); i = j + 1; } }
+    }
+    rects.slice(0, 4).forEach((r, i) => uBalcon.value[i].set(r[0] - 0.03, r[1] - 0.03, r[2] + 0.03, r[3] + 0.03));
+    if (rects.length > 4) etat.erreurs.push("balcon : plus de 4 rectangles, flou partiel");
+  }
+  const uSpot = { v3Ext: { value: amb === "nuit" ? 1 : 0 }, v3Spot: { value: new THREE.Vector3(8.495, 2.42, 3.295) },
+    v3SpotK: { value: new THREE.Vector4(0.06, 0.09, 0.18, 1) }, v3SpotCouleur: { value: new THREE.Vector3(1.06, 0.97, 0.86) }, v3Ambre: { value: new THREE.Vector3(1.12, 0.86, 0.56) }, v3Interieur: { value: (() => { const b = [1e9, 1e9, -1e9, -1e9];      // emprise des pièces intérieures : un plafond hors d'elle n'est vu que du dehors
+      for (const q of (plan?.pieces || []).filter((q) => !q.exterieur)) for (const [x, z] of q.poly) { b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], z); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], z); }
+      return b[0] < b[2] ? new THREE.Vector4(b[0] - 0.01, b[1] - 0.01, b[2] + 0.01, b[3] + 0.01) : new THREE.Vector4(-1e9, -1e9, 1e9, 1e9); })() }, v3Pierre: { value: new THREE.Color("#dccbb3").convertSRGBToLinear() } };      // enduit pierre chaude, un seul albédo pour tout le balcon      // x fond, y spot, z adoucissement (m), w exposant du cosinus
+  const ENTETE = "uniform sampler2D v3CarteB;\nuniform float v3ForceB;\nuniform float v3Melange;\nuniform float v3Occ;\nuniform float v3Lisse;\nuniform vec3 v3Chaud;\nuniform float v3Sat;\nuniform float v3Genou;\nuniform vec4 v3Balcon[ 4 ];\nvarying vec3 v3Monde;\n"
+    + "uniform float v3Ext;\nuniform vec3 v3Pierre;\nuniform vec3 v3Spot;\nuniform vec4 v3SpotK;\nuniform vec3 v3SpotCouleur;\nuniform vec3 v3Ambre;\nuniform vec4 v3Interieur;\nvarying vec3 v3NMonde;\n"
+    + "float v3SpotTerme( vec3 n ) { vec3 d = v3Spot - v3Monde; float rr = dot( d, d ); return v3SpotK.y * pow( max( dot( n, d ) * inversesqrt( rr ), 0.0 ), v3SpotK.w ) / ( rr + v3SpotK.z * v3SpotK.z ); }\n"
+    + "float v3Angles( vec3 n ) { float x0 = 0.0, x1 = 0.0, z0 = 0.0, z1 = 0.0; bool ok = false;\n"
+    + "\tfor ( int i = 0; i < 4; i ++ ) { vec4 b = v3Balcon[ i ]; if ( b.x > b.z ) continue; if ( ! ok ) { z0 = b.y; z1 = b.w; } z0 = min( z0, b.y ); z1 = max( z1, b.w );\n"
+    + "\t\tif ( v3Monde.x >= b.x && v3Monde.z >= b.y && v3Monde.x <= b.z && v3Monde.z <= b.w ) { x0 = b.x; x1 = b.z; } ok = true; }\n"
+    + "\tvec3 a = abs( n ); float ao = 1.0, k = 0.32, r = 0.28;\n"
+    + "\tif ( a.x < 0.7 ) ao *= ( 1.0 - k * exp( - ( v3Monde.x - x0 ) / r ) ) * ( 1.0 - k * exp( - ( x1 - v3Monde.x ) / r ) );\n"
+    + "\tif ( a.z < 0.7 ) ao *= ( 1.0 - k * exp( - ( v3Monde.z - z0 ) / r ) ) * ( 1.0 - k * exp( - ( z1 - v3Monde.z ) / r ) );\n"
+    + "\tif ( a.y < 0.7 ) ao *= ( 1.0 - k * exp( - v3Monde.y / r ) ) * ( 1.0 - k * exp( - ( 2.56 - v3Monde.y ) / r ) );\n"
+    + "\treturn ao; }\n"
+    + "bool v3DansBalcon( float m ) { for ( int i = 0; i < 4; i ++ ) { vec4 b = v3Balcon[ i ] + vec4( - m, - m, m, m ); if ( v3Monde.x >= b.x && v3Monde.z >= b.y && v3Monde.x <= b.z && v3Monde.z <= b.w ) return true; } return false; }\n"
+    + "float v3Rayon() {\n#ifdef V3_LISSE\n\treturn v3Lisse * float( V3_LISSE_K );\n#else\n\treturn 0.0;\n#endif\n}\n"
+    + "vec3 v3Lire( sampler2D c, vec2 uv ) {\n\tfloat R = v3Rayon();\n\tif ( R <= 0.0 ) return texture2D( c, uv ).rgb;\n\tvec3 s = texture2D( c, uv ).rgb;\n"
+    + "\tfor ( int i = 0; i < 16; i ++ ) { float a = float( i ) * 2.39996, r = R * sqrt( ( float( i ) + 0.5 ) / 16.0 ); s += texture2D( c, uv + r * vec2( cos( a ), sin( a ) ) ).rgb; }\n\treturn s / 17.0;\n}\n";
+  const uLisse = { value: 0 }, LISSES = /^Sol de terrasse/, COQUES = /^(Enduit|Plafond|Verre depoli|Coupe de mur)/;      // sol du balcon : flou de nuit ; coques : lumière calculée dans le balcon
   const cartesB = new Map();      // matière -> uniforme de la carte de l'autre ambiance
   // Décalque : une couche posée à plat sur une autre (seuil sur le sol, aplat sur le papier, plinthe contre un meuble) est poussée de quelques millimètres
   // le long de sa normale, dans le nuanceur. Contrairement au décalage de polygone (qui grandit avec la pente et faisait traverser les murs en vue rasante :
@@ -329,11 +388,13 @@ async function demarrer() {
     const u = { value: null }, ud = { value: d }; cartesB.set(m, { u, atlas });
     const dessous = !(m.alphaTest > 0) && !m.transparent;      // une feuille vue de dos reste une feuille
     m.onBeforeCompile = (sh) => { sh.uniforms.v3CarteB = u; sh.uniforms.v3ForceB = uForceB; sh.uniforms.v3Melange = uMelange; sh.uniforms.v3Occ = uOcc; sh.uniforms.v3Lisse = uLisse;
-      sh.uniforms.v3Chaud = atlas === "a" ? uChaudA : uChaudB; sh.uniforms.v3Genou = uGenou; ton(sh); DECALER(sh, ud);
+      sh.uniforms.v3Chaud = atlas === "a" ? uChaudA : uChaudB; sh.uniforms.v3Sat = atlas === "a" ? uSatA : UN; sh.uniforms.v3Genou = uGenou; sh.uniforms.v3Balcon = uBalcon; Object.assign(sh.uniforms, uSpot); ton(sh); DECALER(sh, ud);
+      sh.vertexShader = "varying vec3 v3Monde;\nvarying vec3 v3NMonde;\n" + sh.vertexShader.replace("#include <project_vertex>", "#include <project_vertex>\n\tv3Monde = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;\n\tv3NMonde = mat3( modelMatrix ) * objectNormal;");
       sh.fragmentShader = ENTETE + sh.fragmentShader.replace("#include <lights_fragment_maps>", BLOC_CARTE); };
-    const lisse = LISSES.test(m.name);
-    m.defines = { ...(m.defines || {}), ...(lisse ? { V3_LISSE: "" } : {}), ...(dessous ? { V3_DESSOUS: "" } : {}) };
-    const cle = "v3-carte" + (lisse ? "-lisse" : "") + (dessous ? "-dessous" : "");
+    const lisse = LISSES.test(m.name), k = 1, coque = COQUES.test(m.name);
+    m.defines = { ...(m.defines || {}), ...(lisse ? { V3_LISSE: "", V3_LISSE_K: k.toFixed(2) } : {}), ...(dessous ? { V3_DESSOUS: "" } : {}), ...(coque ? { V3_COQUE: "" } : {}), ...(/^Plafond/.test(m.name) ? { V3_PLAFOND: "" } : {}) };
+    if (coque) m.dithering = true;      // dégradé lisse sans marches de 8 bits
+    const cle = "v3-carte" + (lisse ? "-lisse" + k : "") + (dessous ? "-dessous" : "") + (coque ? "-coque" : "") + (/^Plafond/.test(m.name) ? "-plafond" : "");
     m.customProgramCacheKey = () => cle;
   }
   function brancherVerre(m) {
@@ -346,6 +407,7 @@ async function demarrer() {
   // décor ajouté par la visite (sans carte) : éclairé par l'image d'environnement de la pièce, qui est la lumière des panoramas validés
   function brancherDecor(m) { m.onBeforeCompile = (sh) => { ton(sh); }; m.customProgramCacheKey = () => "v3-decor"; return m; }
 
+  const envoyees = new WeakSet();      // textures déjà envoyées à la carte graphique
   const cartes = new Map();      // "atlas|ambiance" -> promesse de texture
   function carte(atlas, a) {
     const cle = atlas + "|" + a;
@@ -353,7 +415,21 @@ async function demarrer() {
       const nom = sc.cartes[atlas]?.[a]; if (!nom) throw new Error(`carte ${atlas} ${a} absente de scene.json`);
       const src = await image(await telecharger(nom), { plafond: PLAFOND_CARTE });
       // pas de niveaux réduits : les îlots de l'atlas sont serrés, un niveau réduit mélangerait chaque îlot avec ses voisins (liserés sombres aux arêtes)
-      const t = texture(src, { channel: 1, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }); t.name = nom; return t;
+      const reg = { channel: 1, generateMipmaps: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter }, im = src.image;
+      // Envoi par bandes : une carte de 4096 envoyée d'un bloc fige l'écran 120 ms (mesuré, c'est le volume, 64 Mo). On réserve la texture vide,
+      // puis on y copie huit bandes, une par image : aucune étape ne dépasse une vingtaine de millisecondes, au chargement comme au passage jour / nuit.
+      if (typeof ImageBitmap !== "undefined" && im instanceof ImageBitmap && im.height >= 2048 && !src.flipY) {
+        try {
+          const t = new THREE.DataTexture(null, im.width, im.height, THREE.RGBAFormat, THREE.UnsignedByteType); Object.assign(t, reg); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false;
+          t.source.dataReady = false; t.needsUpdate = true; t.name = nom; renderer.initTexture(t);
+          const N = 8, hb = Math.ceil(im.height / N), suivante = () => new Promise((ok) => { let fait = false; const f = () => { if (!fait) { fait = true; ok(); } }; requestAnimationFrame(f); setTimeout(f, 60); });
+          for (let k = 0; k < N; k++) { const y = k * hb, hh = Math.min(hb, im.height - y); if (hh <= 0) break;
+            const bande = await createImageBitmap(im, 0, y, im.width, hh, OPT), s2 = new THREE.Texture(bande); s2.flipY = false; s2.colorSpace = THREE.SRGBColorSpace;
+            renderer.copyTextureToTexture(s2, t, null, new THREE.Vector2(0, y)); bande.close(); await suivante(); }
+          im.close(); envoyees.add(t); return t;
+        } catch (e) { etat.erreurs.push("bandes : " + (e.message || e)); }
+      }
+      const t = texture(src, reg); t.name = nom; return t;
     })());
     return cartes.get(cle);
   }
@@ -402,13 +478,14 @@ async function demarrer() {
   function forceEmissifs(a, b, t) {
     const ra = reglage(a), rb = reglage(b), entre = (x, y) => x + (y - x) * t;
     uContraste.value = entre(ra.contraste, rb.contraste); uSaturation.value = entre(ra.saturation, rb.saturation); uGenou.value = entre(ra.genou, rb.genou);
-    uChaudA.value.set(...ra.chaudA).lerp(new THREE.Vector3(...rb.chaudA), t); uChaudB.value.set(...ra.chaudB).lerp(new THREE.Vector3(...rb.chaudB), t);
+    uSatA.value = entre(ra.satA, rb.satA); uChaudA.value.set(...ra.chaudA).lerp(new THREE.Vector3(...rb.chaudA), t); uChaudB.value.set(...ra.chaudB).lerp(new THREE.Vector3(...rb.chaudB), t);
     // de jour les plafonniers ne sont pas allumés : leur disque ne doit pas briller comme une lampe
     const lum = (nom, rg) => (nom === "Lumiere" ? rg.lumiere : 1);
     for (const e of emissifs) { const r = sc?.emissifs?.[e.nom], fa = (r?.[a] ?? e.base) * lum(e.nom, ra), fb = (r?.[b] ?? e.base) * lum(e.nom, rb); e.m.emissiveIntensity = (fa + (fb - fa) * t) * (e.k ?? 1); if (e.eteinte) e.m.visible = e.m.emissiveIntensity > 0.02;
       if (r?.couleur && !e.teinte) { e.teinte = true; e.m.emissive.setRGB(r.couleur[0], r.couleur[1], r.couleur[2]); e.m.emissiveMap = null; } }
     teintesCiel(a, b, t);
     { const la = a === "nuit" ? 0.012 : 0, lb = b === "nuit" ? 0.012 : 0; uLisse.value = la + (lb - la) * t; }
+    uSpot.v3Ext.value = entre(a === "nuit" ? 1 : 0, b === "nuit" ? 1 : 0);
     { const va = a === "nuit" ? 0.05 : 0.32, vb = b === "nuit" ? 0.05 : 0.32; uVerre.value = va + (vb - va) * t; }
     for (const e of dehorsMat) { const fa = sc?.emissifs?.[e.nom]?.[a] ?? 1, fb = sc?.emissifs?.[e.nom]?.[b] ?? 1; e.m.color.copy(e.base).multiplyScalar(fa + (fb - fa) * t); }
   }
@@ -469,8 +546,8 @@ void main() {
     const ici = tous.filter((r) => r.piece === id), L = ici.length ? ici : tous, d = (r) => (r.pos ? Math.hypot(r.pos[0] - pos.x, r.pos[2] - pos.z) : 1e9);
     return L.reduce((m, r) => (d(r) < d(m) ? r : m), L[0]);      // une pièce peut avoir plusieurs images (salon, cuisine) : la plus proche
   }
-  function envDe(id, a) {
-    const r = refletDe(id, a); if (!r) return envNeutre(a);
+  function envDe(id, a) { const r = refletDe(id, a); return r ? envR(r, a) : envNeutre(a); }
+  function envR(r, a) {
     const cle = r[a];
     if (!envs.has(cle)) envs.set(cle, (async () => {
       const enScene = (r.codage || sc.reflets_codage || "affichage") === "scene";
@@ -493,9 +570,24 @@ void main() {
     })().catch((e) => { etat.erreurs.push(String(e.message || e)); return envNeutre(a); }));
     return envs.get(cle);
   }
+  // Une seule image de reflets pour toute la visite. Donner à la scène une AUTRE texture à chaque changement de pièce oblige le moteur à revérifier
+  // le programme de chacune des matières (une soixantaine) : des images de 117 ms en entrant dans la salle d'eau ou l'entrée (mesuré). On recopie
+  // donc l'image de la pièce dans une texture commune, qui reste celle de la scène : pour le moteur rien ne change, seul le contenu change.
+  let envCommun = null;
+  const copie = { scene: new THREE.Scene(), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), mat: new THREE.ShaderMaterial({ uniforms: { t: { value: null } }, depthTest: false, depthWrite: false, toneMapped: false,
+    vertexShader: "varying vec2 vUv;\nvoid main() { vUv = uv; gl_Position = vec4( position.xy, 0.0, 1.0 ); }", fragmentShader: "uniform sampler2D t;\nvarying vec2 vUv;\nvoid main() { gl_FragColor = texture2D( t, vUv ); }" }) };
+  { const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), copie.mat); q.frustumCulled = false; copie.scene.add(q); }
   function poserEnv(e) {
     if (!e || envPose === e) return; envPose = e;
-    scene.environment = e.rt.texture; scene.environmentRotation.set(0, -rad(e.lacet), 0); scene.environmentIntensity = e.force; demander();
+    const src = e.rt.texture, w = e.rt.width, h = e.rt.height;
+    try {
+      if (!envCommun) { envCommun = new THREE.WebGLRenderTarget(w, h, { type: src.type, format: src.format, colorSpace: src.colorSpace, magFilter: src.magFilter, minFilter: src.minFilter, generateMipmaps: false, depthBuffer: false });
+        envCommun.texture.mapping = src.mapping; envCommun.texture.name = "reflets communs"; }
+      if (envCommun.width !== w || envCommun.height !== h) throw new Error("taille");
+      copie.mat.uniforms.t.value = src; const cible = renderer.getRenderTarget(); renderer.setRenderTarget(envCommun); renderer.render(copie.scene, copie.cam); renderer.setRenderTarget(cible);
+      scene.environment = envCommun.texture;
+    } catch (err) { scene.environment = src; }
+    scene.environmentRotation.set(0, -rad(e.lacet), 0); scene.environmentIntensity = e.force; demander();
   }
 
   // ---------------------------------------------------------------- chargement de la scène
@@ -553,6 +645,45 @@ void main() {
   }
   scene.add(racine);
   scene.updateMatrixWorld(true);
+  // Plafonnier du balcon : il était posé contre l'angle saillant du mur. On le déplace au centre de la travée du plafond du balcon
+  // (milieu de la bande la plus étroite du balcon en x, milieu de toute sa longueur en z), avec tout ce qui le compose (corps, diffuseur) :
+  // les triangles à moins de 16 cm de son diffuseur, au-dessus de 2,35 m, hors enduits et plafonds, sont extraits de leur maillage et translatés.
+  {
+    const dedans = (p) => uBalcon.value.some((b) => p.x >= b.x && p.z >= b.y && p.x <= b.z && p.z <= b.w);
+    const v = new THREE.Vector3(), c = new THREE.Vector3(); let n = 0;
+    racine.traverse((o) => { if (!o.isMesh || extra(o, "role") !== "emissif") return; const pa = o.geometry.attributes.position;
+      for (let i = 0; i < pa.count; i++) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); if (v.y > 1.6 && v.y < H + 0.4 && dedans(v)) { c.add(v); n++; } } });
+    const rects = uBalcon.value.filter((b) => b.x < b.z);
+    if (n && rects.length) {
+      c.multiplyScalar(1 / n);
+      const etroit = rects.reduce((m, b) => (b.z - b.x < m.z - m.x ? b : m)), z0 = Math.min(...rects.map((b) => b.y)), z1 = Math.max(...rects.map((b) => b.w));
+      const dx = (etroit.x + etroit.z) / 2 - c.x, dz = (z0 + z1) / 2 - c.z;
+      const boite = new THREE.Box3(new THREE.Vector3(c.x - 0.16, 2.35, c.z - 0.16), new THREE.Vector3(c.x + 0.16, H + 0.3, c.z + 0.16)), a = new THREE.Vector3(), m = new THREE.Vector3();
+      const morceaux = [];
+      racine.traverse((o) => { if (!o.isMesh || /^(Enduit|Plafond|Coupe de mur|Verre depoli)/.test(o.material?.name || "")) return;
+        const g = o.geometry, pa = g.attributes.position, idx = g.index ? Array.from(g.index.array) : [...Array(pa.count).keys()], garde = [], pris = [];
+        for (let t = 0; t < idx.length; t += 3) { m.set(0, 0, 0); for (let k = 0; k < 3; k++) m.add(a.fromBufferAttribute(pa, idx[t + k]).applyMatrix4(o.matrixWorld)); m.multiplyScalar(1 / 3);
+          (boite.containsPoint(m) ? pris : garde).push(idx[t], idx[t + 1], idx[t + 2]); }
+        if (!pris.length) return;
+        const g2 = g.clone(); g2.setIndex(pris); g.setIndex(garde);
+        const o2 = new THREE.Mesh(g2, o.material); o2.matrix.copy(o.matrixWorld).premultiply(new THREE.Matrix4().makeTranslation(dx, 0, dz)); o2.matrixAutoUpdate = false;
+        o2.matrixWorld.copy(o2.matrix); o2.userData = { ...o.userData, lm: extra(o, "lm"), role: extra(o, "role") }; morceaux.push(o2);
+      });
+      for (const o2 of morceaux) racine.add(o2);
+      racine.updateMatrixWorld(true);
+      etat.plafonnier = { de: [+c.x.toFixed(3), +c.z.toFixed(3)], vers: [+(c.x + dx).toFixed(3), +(c.z + dz).toFixed(3)], morceaux: morceaux.length };
+    }
+  }
+  // Spot du balcon : centre des luminaires extérieurs (émissifs) posés en hauteur dans le volume du balcon, 13 cm sous leur centre.
+  // Aucun trouvé : seul le fond d'ambiance éclaire les surfaces du balcon la nuit.
+  {
+    const c = new THREE.Vector3(), v = new THREE.Vector3(); let n = 0;
+    const dedans = (p) => uBalcon.value.some((b) => p.x >= b.x && p.z >= b.y && p.x <= b.z && p.z <= b.w);
+    racine.traverse((o) => { if (!o.isMesh || extra(o, "role") !== "emissif") return; const pa = o.geometry.attributes.position, ix = o.geometry.index;      // sommets des triangles dessinés seulement
+      for (let k = 0, N = ix ? ix.count : pa.count; k < N; k++) { v.fromBufferAttribute(pa, ix ? ix.getX(k) : k).applyMatrix4(o.matrixWorld); if (v.y > 1.6 && v.y < H + 0.4 && dedans(v)) { c.add(v); n++; } } });
+    if (n) uSpot.v3Spot.value.copy(c.multiplyScalar(1 / n)).y -= 0.13; else uSpot.v3SpotK.value.y = 0;
+    etat.spotBalcon = n ? uSpot.v3Spot.value.toArray().map((x) => +x.toFixed(3)) : null;
+  }
   racine.traverse((o) => { o.matrixAutoUpdate = false; });
   // Jardin en contrebas retiré : tout ce qui est sous le niveau du balcon est coupé (pelouse, haie, buis, dalles, pied de façade),
   // et les maillages qui descendent au jardin et sont entièrement hors de l'emprise du logement (les arbres) sont masqués en entier.
@@ -561,6 +692,60 @@ void main() {
   racine.traverse((o) => { if (!o.isMesh) return; o.geometry.computeBoundingBox(); const b = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
     if (b.max.y < -0.1 || (b.min.y < -1 && (b.min.x > limites[2] || b.max.x < limites[0] || b.min.z > limites[3] || b.max.z < limites[1]))) o.visible = false; });
   ciel.matrixAutoUpdate = false;
+  // Joints du balcon : la géométrie du moteur laisse des jours par lesquels on voit le ciel.
+  //  1. Entre le haut d'un mur (2,50 m) et le plafond du balcon (2,56 m) : chaque face verticale d'enduit du balcon dont le haut s'arrête
+  //     sous le plafond est prolongée jusqu'au-dessus de lui, avec la lumière de son bord haut (mêmes coordonnées de carte).
+  //  2. Autour d'une paroi en verre dépoli : un fond anthracite dans l'épaisseur de son cadre, sur toute la section du balcon, et une joue
+  //     anthracite au ras du mur là où le mur est en retrait derrière le montant.
+  if (v3) try {
+    const joints = new THREE.Group(); joints.name = "joints-v3";
+    const dedans = (x, z, m) => uBalcon.value.some((b) => b.x < b.z && x >= b.x - m && z >= b.y - m && x <= b.z + m && z <= b.w + m);
+    const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), N = new THREE.Vector3(), HAUT = H + 0.075;
+    racine.traverse((o) => {
+      if (!o.isMesh || !/^Enduit/.test(o.material?.name || "") || !o.geometry.attributes.uv1) return;
+      const g = o.geometry, pa = g.attributes.position, u1 = g.attributes.uv1, ix = g.index, n = (ix ? ix.count : pa.count) / 3, pos = [], nor = [], uv = [], uvb = [], ind = [];
+      for (let t = 0; t < n; t++) {
+        const i = [0, 1, 2].map((k) => (ix ? ix.getX(3 * t + k) : 3 * t + k)), P = i.map((k) => new THREE.Vector3().fromBufferAttribute(pa, k).applyMatrix4(o.matrixWorld));
+        N.subVectors(P[1], P[0]).cross(C.subVectors(P[2], P[0])); if (N.length() < 1e-6) continue; N.normalize(); if (Math.abs(N.y) > 0.05) continue;
+        const ym = Math.max(P[0].y, P[1].y, P[2].y); if (ym < 2.4 || ym > H + 0.055) continue;
+        const hauts = [0, 1, 2].filter((k) => Math.abs(P[k].y - ym) < 1e-3); if (hauts.length !== 2) continue;
+        const a = P[hauts[0]], b = P[hauts[1]]; if (a.distanceTo(b) < 0.04 || !dedans((a.x + b.x) / 2, (a.z + b.z) / 2, 0.06)) continue;
+        const k0 = pos.length / 3, bas = [0, 1, 2].find((k) => !hauts.includes(k)), L = a.distanceTo(b), sc2 = P[bas].clone().sub(a).dot(b.clone().sub(a)) / (L * L), dy = P[bas].y - ym;
+        const U = (k) => [u1.getX(i[k]), u1.getY(i[k])], ua = U(hauts[0]), ub = U(hauts[1]), uc = U(bas), d = Math.min(0.03, -dy * 0.5);
+        const gy = [0, 1].map((q) => (uc[q] - ua[q] - sc2 * (ub[q] - ua[q])) / dy);      // variation des coordonnées de carte par mètre de hauteur
+        for (const [q, u, y] of [[a, ua, ym - 0.002], [b, ub, ym - 0.002], [b, ub, HAUT], [a, ua, HAUT]]) { pos.push(q.x, y, q.z); nor.push(N.x, 0, N.z); uv.push(0, 0); uvb.push(u[0] - d * gy[0], u[1] - d * gy[1]); }
+        ind.push(k0, k0 + 1, k0 + 2, k0, k0 + 2, k0 + 3);
+      }
+      if (!ind.length) return;
+      const g2 = new THREE.BufferGeometry(); g2.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g2.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+      g2.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); g2.setAttribute("uv1", new THREE.Float32BufferAttribute(uvb, 2)); g2.setIndex(ind);
+      const m2 = new THREE.Mesh(g2, o.material); m2.userData = { lm: extra(o, "lm") }; joints.add(m2);
+    });
+    etat.joints = { murs: joints.children.length, parois: 0 };
+    // parois en verre dépoli
+    const anthracite = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.0055, 0.006, 0.0068), side: THREE.DoubleSide }); anthracite.name = "Joint anthracite"; anthracite.onBeforeCompile = ton; anthracite.customProgramCacheKey = () => "v3-joint";
+    const haut = (x, z) => obst3.some((b) => b[4] >= 2 && x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3]);
+    const plaque = (p0, p1, p2, p3) => { const g2 = new THREE.BufferGeometry(); g2.setAttribute("position", new THREE.Float32BufferAttribute([...p0, ...p1, ...p2, ...p3], 3)); g2.setIndex([0, 1, 2, 0, 2, 3]); joints.add(new THREE.Mesh(g2, anthracite)); };
+    const rects = uBalcon.value.filter((b) => b.x < b.z), cx = rects.reduce((s2, b) => s2 + (b.x + b.z) / 2, 0) / (rects.length || 1), cz = rects.reduce((s2, b) => s2 + (b.y + b.w) / 2, 0) / (rects.length || 1);
+    racine.traverse((o) => {
+      if (!o.isMesh || !/^Verre depoli/.test(o.material?.name || "")) return;
+      o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld), c = bb.getCenter(new THREE.Vector3()), t = bb.getSize(new THREE.Vector3());
+      const r = rects.find((b) => c.x >= b.x - 0.1 && c.x <= b.z + 0.1 && c.z >= b.y - 0.1 && c.z <= b.w + 0.1); if (!r) return;
+      const enZ = t.z < t.x, vers = enZ ? Math.sign(cz - c.z) || 1 : Math.sign(cx - c.x) || 1;      // vers l'intérieur du balcon
+      const e = (enZ ? c.z : c.x) - vers * 0.014, lo = (enZ ? r.x : r.y) + 0.03, hi = (enZ ? r.z : r.w) - 0.03;      // bords réels du balcon (les rectangles sont élargis de 3 cm)
+      const pt = (u, y, w) => (enZ ? [u, y, w] : [w, y, u]);
+      plaque(pt(lo - 0.22, -0.05, e), pt(hi + 0.06, -0.05, e), pt(hi + 0.06, HAUT, e), pt(lo - 0.22, HAUT, e));
+      for (const [bord, dehors] of [[lo, -1], [hi, 1]]) {
+        const q = (w) => (enZ ? [bord + dehors * 0.05, c.z + vers * w] : [c.x + vers * w, bord + dehors * 0.05]);
+        if (haut(...q(0.1)) || !haut(...q(0.34))) continue;      // pas de retrait de mur de ce côté
+        let w1 = 0.1; while (w1 < 0.4 && !haut(...q(w1))) w1 += 0.01;
+        const u = bord - dehors * 0.0015, wa = (enZ ? c.z : c.x) - vers * 0.02, wb = (enZ ? c.z : c.x) + vers * (w1 + 0.03);
+        plaque(pt(u, -0.05, wa), pt(u, -0.05, wb), pt(u, HAUT, wb), pt(u, HAUT, wa));
+      }
+      etat.joints.parois++;
+    });
+    joints.traverse((q) => { q.matrixAutoUpdate = false; }); scene.add(joints); joints.updateMatrixWorld(true);
+  } catch (e) { etat.erreurs.push("joints : " + (e.message || e)); }
   if (v3 && Q.get("decor") !== "0") { try { await decorer(); } catch (e) { etat.erreurs.push("décor : " + (e.message || e)); } }
 
   // ---------------------------------------------------------------- décor refait dans la visite, sans recuisson
@@ -598,6 +783,8 @@ void main() {
     function oeuvre(seed, W, H) {
       const cv = document.createElement("canvas"); cv.width = W; cv.height = H; const c = cv.getContext("2d"), r = hasard(seed * 7919 + 13), pick = () => PAL[Math.floor(r() * PAL.length)];
       c.fillStyle = "#efe6d7"; c.fillRect(0, 0, W, H);
+      // l'image couvre tout le papier : le passe-partout crème est dessiné, l'œuvre tient dans le cadre intérieur
+      const mg = Math.round(0.12 * Math.min(W, H)); c.save(); c.beginPath(); c.rect(mg, mg, W - 2 * mg, H - 2 * mg); c.clip(); c.translate(mg, mg); c.scale((W - 2 * mg) / W, (H - 2 * mg) / H);
       const genre = seed % 4, m = Math.min(W, H);
       if (genre === 0) {            // arche et soleil
         c.fillStyle = "#e3cfae"; c.fillRect(0, H * 0.62, W, H * 0.38);
@@ -619,6 +806,7 @@ void main() {
         c.fillStyle = "#a5513a"; c.beginPath(); c.arc(W * 0.38, H * 0.42, m * 0.1, 0, 2 * Math.PI); c.fill();
         c.strokeStyle = "#3f342b"; c.lineWidth = m * 0.006; for (let k = 0; k < 3; k++) { c.beginPath(); c.arc(W * 0.6, H * 0.6, m * (0.18 + 0.05 * k), Math.PI * 1.1, Math.PI * 1.9); c.stroke(); }
       }
+      c.restore(); c.strokeStyle = "rgba(120,100,80,0.35)"; c.lineWidth = 1.5; c.strokeRect(mg, mg, W - 2 * mg, H - 2 * mg);      // biseau du passe-partout
       // grain du papier
       const im = c.getImageData(0, 0, W, H), d = im.data; for (let i = 0; i < d.length; i += 4) { const g = (r() - 0.5) * 14; d[i] += g; d[i + 1] += g; d[i + 2] += g; } c.putImageData(im, 0, 0);
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ANISO; return t;
@@ -647,19 +835,19 @@ void main() {
           const nrm = new THREE.Vector3(gr.k === 0 ? gr.s : 0, 0, gr.k === 2 ? gr.s : 0), droite = new THREE.Vector3(0, 1, 0).cross(nrm);
           const ax = gr.k === 0 ? "z" : "x", u0 = b.min[ax], u1 = b.max[ax], v0 = b.min.y, v1 = b.max.y, w = u1 - u0, h = v1 - v0;
           if (w < 0.15 || h < 0.15) continue;
-          const c = b.getCenter(new THREE.Vector3()); if (G.dist(c.x + nrm.x * 0.3, c.z + nrm.z * 0.3) <= G.dist(c.x - nrm.x * 0.06, c.z - nrm.z * 0.06)) continue;      // face du côté du mur
+          const c = b.getCenter(new THREE.Vector3()); { const l = Math.atan2(nrm.x, -nrm.z); if (portee(c.x, c.z, l) <= portee(c.x, c.z, l + Math.PI)) continue; }      // face tournée vers le mur : on garde celle qui regarde la pièce (un canapé devant le cadre ne compte pas, seuls les obstacles hauts)
           // coordonnées de carte aux quatre coins : sommet le plus proche de chaque coin
           const coin = (u, v) => { let m = null, dm = 1e9; for (const tr of tris) for (const i of tr) { A.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); const k = (A[ax] - u) ** 2 + (A.y - v) ** 2; if (k < dm) { dm = k; m = i; } } return [uv1.getX(m), uv1.getY(m)]; };
           const ag = droite[ax] > 0 ? u0 : u1, ad = droite[ax] > 0 ? u1 : u0;      // gauche et droite vues de face
           const cBG = coin(ag, v0), cBD = coin(ad, v0), cHD = coin(ad, v1), cHG = coin(ag, v1);
-          const marge = 0.13 * Math.min(w, h), fx = marge / w, fy = marge / h;
+          const fx = 0, fy = 0;      // le tableau couvre tout le papier : la carte du papier porte l'ombre cuite des anciens aplats, on ne doit plus la voir
           const lerp2 = (a, b2, t) => [a[0] + (b2[0] - a[0]) * t, a[1] + (b2[1] - a[1]) * t];
           const uvAt = (s, t) => lerp2(lerp2(cBG, cBD, s), lerp2(cHG, cHD, s), t);
           const pts = [[fx, fy], [1 - fx, fy], [1 - fx, 1 - fy], [fx, 1 - fy]], pos = [], uvs = [], uvs1 = [], nor = [];
-          for (const [s, t] of pts) { const q = c.clone().addScaledVector(droite, (s - 0.5) * w).setY(v0 + t * h).addScaledVector(nrm, 0.0035); pos.push(q.x, q.y, q.z); uvs.push((s - fx) / (1 - 2 * fx), (t - fy) / (1 - 2 * fy)); uvs1.push(...uvAt(s, t)); nor.push(nrm.x, 0, nrm.z); }
+          for (const [s, t] of pts) { const q = c.clone().addScaledVector(droite, (s - 0.5) * w).setY(v0 + t * h).addScaledVector(nrm, 0.0035); pos.push(q.x, q.y, q.z); uvs.push((s - fx) / (1 - 2 * fx), (t - fy) / (1 - 2 * fy)); uvs1.push(...uvAt(0.04 + 0.02 * s, 0.03 + 0.02 * t)); /* lumière : un petit carré de la marge du papier, sans ombre d'aplat */ nor.push(nrm.x, 0, nrm.z); }
           const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
           geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2)); geo.setAttribute("uv1", new THREE.Float32BufferAttribute(uvs1, 2)); geo.setIndex([0, 1, 2, 0, 2, 3]);
-          const W = 512, Hp = Math.max(64, Math.round(W * (h - 2 * marge) / (w - 2 * marge)));
+          const W = 512, Hp = Math.max(64, Math.round(W * h / w));
           const m = new THREE.MeshStandardMaterial({ map: oeuvre(nTab++, W, Math.min(1024, Hp)), roughness: 0.92, metalness: 0, side: THREE.FrontSide }); m.name = "Tableau v3";
           m.lightMapIntensity = echelle(amb); brancherCarte(m, "b", 0); const tx = await carte("b", amb); m.lightMap = tx; cartesB.get(m).u.value = tx;
           const me = new THREE.Mesh(geo, m); me.matrixAutoUpdate = false; deco.add(me);
@@ -747,7 +935,7 @@ void main() {
   const OMBRE_MIROIR = { name: "MiroirV3", uniforms: { color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null } },
     vertexShader: "uniform mat4 textureMatrix;\nvarying vec4 vUv;\nvoid main() { vUv = textureMatrix * vec4( position, 1.0 ); gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }",
     fragmentShader: "uniform vec3 color;\nuniform sampler2D tDiffuse;\nvarying vec4 vUv;\nvoid main() {\n\tgl_FragColor = vec4( texture2DProj( tDiffuse, vUv ).rgb * color, 1.0 );\n\t#include <tonemapping_fragment>\n\t#include <colorspace_fragment>\n}" };
-  const tailleMiroir = () => { const k = (mobile ? 0.5 : 0.75) * renderer.getPixelRatio(); return [Math.min(1536, Math.round(innerWidth * k)), Math.min(1536, Math.round(innerHeight * k))]; };
+  const tailleMiroir = () => { const k = (mobile ? 0.5 : 0.6) * renderer.getPixelRatio(); return [Math.min(1536, Math.round(innerWidth * k)), Math.min(1536, Math.round(innerHeight * k))]; };
   if (v3) racine.traverse((o) => {
     const m = o.material; if (!o.isMesh || !(extra(o, "reflet") === "miroir" || (m.metalness >= 0.9 && m.roughness <= 0.06))) return;
     o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld), t = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
@@ -756,7 +944,7 @@ void main() {
     const n = new THREE.Vector3(axe === 0 ? 1 : 0, 0, axe === 2 ? 1 : 0);
     if (G.dist(c.x - n.x * 0.35, c.z - n.z * 0.35) > G.dist(c.x + n.x * 0.35, c.z + n.z * 0.35)) n.negate();      // la face utile regarde la pièce, pas le mur
     const [w, h] = tailleMiroir();
-    const r = new Reflector(new THREE.PlaneGeometry(larg, t.y), { textureWidth: w, textureHeight: h, multisample: mobile ? 0 : 4, shader: OMBRE_MIROIR, color: m.color.clone().multiplyScalar(0.96) });
+    const r = new Reflector(new THREE.PlaneGeometry(larg, t.y), { textureWidth: w, textureHeight: h, multisample: mobile ? 0 : 2, shader: OMBRE_MIROIR, color: m.color.clone().multiplyScalar(0.96) });
     r.material.uniforms.v3Contraste = uContraste; r.material.uniforms.v3Saturation = uSaturation;
     r.position.copy(c).addScaledVector(n, ep / 2 + 0.0015); r.lookAt(r.position.clone().add(n)); r.visible = false; r.updateMatrixWorld(true); r.matrixAutoUpdate = false; scene.add(r);
     // Le reflet est calculé AVANT l'image, pas pendant : un rendu imbriqué laisse au rendu principal les plans de coupe et l'état de la caméra du miroir,
@@ -772,11 +960,14 @@ void main() {
       if (ok) return false; }
     return true;
   }
+  const champ = new THREE.Frustum(), champM = new THREE.Matrix4();
   function majMiroirs() {
+    champ.setFromProjectionMatrix(champM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     for (const m of miroirs) {
       if (m.piece === null) m.piece = pieceA(m.c.x + m.n.x * 0.4, m.c.z + m.n.z * 0.4) || "";
       const devant = (pos.x - m.c.x) * m.n.x + (pos.z - m.c.z) * m.n.z;
-      m.r.visible = !etat.dessus && devant > 0.05 && ((m.piece && m.piece === pieceId) || vueDegagee(pos.x, pos.z, m.c.x + m.n.x * 0.06, m.c.z + m.n.z * 0.06));
+      // le miroir ne se calcule (la scène rendue une seconde fois) que s'il est dans le champ : dos au miroir, ou en traversant l'entrée, il ne coûte rien
+      m.r.visible = !etat.dessus && devant > 0.05 && champ.intersectsObject(m.r) && ((m.piece && m.piece === pieceId) || vueDegagee(pos.x, pos.z, m.c.x + m.n.x * 0.06, m.c.z + m.n.z * 0.06));
     }
   }
 
@@ -830,15 +1021,17 @@ void main() {
   let surPiece = () => {}, surPoint = () => {};
 
   // ---------------------------------------------------------------- boucle : une image seulement quand quelque chose bouge
-  let enAttente = false, dernier = 0;
-  function demander() { if (enAttente) return; enAttente = true; requestAnimationFrame(tic); }
+  let enAttente = false, dernier = 0, bouge = 0;      // bouge : instant de la dernière image demandée, donc de la dernière activité
+  function demander() { bouge = performance.now(); if (enAttente) return; enAttente = true; requestAnimationFrame(tic); }
   function tic(t) { enAttente = false; const suite = !!dernier, dt = dernier ? Math.min(0.1, (t - dernier) / 1000) : 1 / 60; dernier = t; if (suite) lenteur(dt); const actif = avancer(dt); dessiner(); if (actif) demander(); else dernier = 0; }
   // 20 images de plus de 24 ms (moins de 42 images par seconde) pendant un mouvement continu : un quart de densité en moins, une fois pour toutes
   function lenteur(dt) {
     lentes = dt > 0.024 ? lentes + 1 : Math.max(0, lentes - 2);
-    if (lentes < 20 || dpr <= 1) return;
-    dpr = Math.max(1, dpr - 0.25); lentes = 0; etat.dpr = dpr; renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight, false);
-    for (const m of miroirs) m.r.getRenderTarget().setSize(...tailleMiroir());
+    if (lentes < 20 || dpr <= 1 || baisse) return;
+    // changer de densité réalloue les images : fait en pleine marche, c'était une saccade de plus. On attend que le visiteur s'arrête.
+    baisse = true; lentes = 0;
+    calme(150).then(() => { baisse = false; dpr = Math.max(1, dpr - 0.25); etat.dpr = dpr; renderer.setPixelRatio(dpr); renderer.setSize(innerWidth, innerHeight, false);
+      for (const m of miroirs) m.r.getRenderTarget().setSize(...tailleMiroir()); demander(); });
   }
   function deplacer(dx, dz) {
     const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.03)); dx /= n; dz /= n;
@@ -1020,6 +1213,8 @@ void main() {
     if (nom === amb) return amb;
     const mats = [...cartesB.entries()];
     const [env] = await Promise.all([envDe(pieceId, nom), ...[...new Set(mats.map(([, c]) => c.atlas))].map((a) => carte(a, nom))]);
+    // chaque carte part vers la carte graphique dans sa propre image, avant le fondu : trois cartes de 4096 en une fois figeaient 0,4 s
+    for (const a of new Set(mats.map(([, c]) => c.atlas))) { const t = await carte(a, nom); if (!envoyees.has(t)) { envoyees.add(t); renderer.initTexture(t); await new Promise(requestAnimationFrame); } }
     for (const [, c] of mats) c.u.value = await carte(c.atlas, nom);
     uForceB.value = echelle(nom);
     fondu = { de: amb, vers: nom, t: 0, duree: immediat ? 1e-6 : 0.9, env };
@@ -1029,7 +1224,7 @@ void main() {
   function finFondu() {
     const f = fondu; fondu = null; amb = f.vers; uMelange.value = 0;
     for (const [m, c] of cartesB) { m.lightMap = c.u.value; m.lightMapIntensity = uForceB.value; }
-    forceEmissifs(amb, amb, 0); etat.ambiance = amb; surAmbiance(amb); $("plan")?.v3vue?.();
+    forceEmissifs(amb, amb, 0); etat.ambiance = amb; surAmbiance(amb); calme(500).then(() => $("plan")?.v3vue?.());      // le mini-plan se refait quand plus rien ne bouge
     if (mobile) for (const [cle, p] of cartes) if (!cle.endsWith("|" + amb)) { cartes.delete(cle); p.then((t) => t.dispose()); }      // téléphone : une seule série de cartes en mémoire
     f.ok?.(amb);
   }
@@ -1048,8 +1243,10 @@ void main() {
     const cv = document.createElement("canvas"); cv.width = w; cv.height = h; cv.getContext("2d").drawImage(renderer.domElement, 0, 0);
     etat.dessus = avant; ciel.visible = cv0; repere.visible = rv; renderer.setPixelRatio(pr);
     if (avant) vueDessus(true); else { renderer.clippingPlanes = [COUPE_BAS]; renderer.setClearColor(0x0c0a08, 1); cadrer(); dessiner(); }
-    return cv.toDataURL("image/jpeg", 0.88);
+    return cv;
   }
+  // attend que plus rien ne bouge (ni marche, ni regard tenu, ni fondu, ni touche) : les travaux de fond ne tombent jamais pendant un déplacement
+  const calme = (ms = 300) => new Promise((ok) => { const f = () => (performance.now() - bouge >= ms && !marche && !prise && !fondu && !touches.size ? ok() : setTimeout(f, 100)); f(); });
 
   // ---------------------------------------------------------------- vue de dessus (outil : comparer au plan)
   function vueDessus(oui) {
@@ -1124,7 +1321,7 @@ void main() {
       const p = plan.pieces.find((q) => q.id === pieceId); if (p) rogne.setAttribute("points", pts(p.poly)); };      // le cône s'arrête aux murs de la pièce, il ne passe ni dans la voisine ni hors du cadre
     planEl.v3legende = legende;
     const vue = svg.querySelector(".vue");
-    planEl.v3vue = () => { try { vue.setAttribute("href", imageDessus()); } catch (e) { etat.erreurs.push("plan : " + (e.message || e)); } };
+    let urlVue = null; planEl.v3vue = () => { try { imageDessus().toBlob((b) => { if (!b) return; const u = URL.createObjectURL(b); vue.setAttribute("href", u); if (urlVue) URL.revokeObjectURL(urlVue); urlVue = u; }, "image/jpeg", 0.86); } catch (e) { etat.erreurs.push("plan : " + (e.message || e)); } };      // encodage hors du fil principal
     let dernierMoi = "";
     majMoi = () => {
       const dh = Math.atan(Math.tan(rad(camera.fov) / 2) * camera.aspect), R = 1.9, cle = `${pos.x.toFixed(3)} ${pos.z.toFixed(3)} ${yaw.toFixed(3)} ${dh.toFixed(3)}`;
@@ -1137,6 +1334,8 @@ void main() {
 
   // ---------------------------------------------------------------- premier rendu
   majBarre(T.prepare);
+  // les reflets de toutes les pièces de l'ambiance ouverte se préparent ici, derrière le chargement (environ 0,1 s chacun) : aucun à faire en marchant
+  if (v3) for (const r of sc.reflets || []) if (r[amb]) { try { await envR(r, amb); } catch (e) { /* reflet neutre */ } majBarre(T.prepare); }
   cadrer();
   const iDepart = Q.has("piece") ? +Q.get("piece") : (/^#\d+$/.test(location.hash) ? +location.hash.slice(1) : -1);
   if (V.pieces[iDepart]) { const p = V.pieces[iDepart]; pos.x = p.x; pos.z = p.z; yaw = regardVers(p); }
@@ -1146,6 +1345,13 @@ void main() {
   poserEnv(await (v3 ? envDe(pieceId, amb) : envNeutre("jour")));
   if (Q.get("dessus") === "1") vueDessus(true);
   try { await renderer.compileAsync(scene, camera); } catch (e) { /* la compilation se fera au premier rendu */ }
+  // Rien ne doit se préparer pendant la visite : tout ce qui se faisait au premier regard se fait ici, derrière le chargement.
+  //  1. le miroir rend la scène dans une image intermédiaire, ce qui demande une seconde version de chaque nuanceur (sans courbe de ton) :
+  //     elles se compilaient une à une en entrant dans la salle de bain (blocages de 120 à 150 ms mesurés). On les compile maintenant.
+  if (miroirs.length) { const cible = miroirs[0].r.getRenderTarget(); renderer.setRenderTarget(cible); try { await renderer.compileAsync(scene, camera); } catch (e) { /* idem */ } renderer.setRenderTarget(null); }
+  //  2. chaque texture partait vers la carte graphique la première fois que son objet entrait dans le champ : on les envoie toutes ici, quatre par image.
+  { const vues = new Set(); let n = 0; scene.traverse((o) => { for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) for (const k of ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "aoMap", "alphaMap", "lightMap"]) { const t = m[k]; if (t && t.isTexture && t.image) vues.add(t); } });
+    for (const t of vues) { if (envoyees.has(t)) continue; envoyees.add(t); try { renderer.initTexture(t); } catch (e) { /* elle partira au premier rendu */ } if (++n % 4 === 0) { majBarre(T.prepare); await new Promise(requestAnimationFrame); } } etat.textures = vues.size; }
   dessiner();
   planEl?.v3vue?.();
   suivi.actif = false; etat.pret = true; chargeEl?.classList.add("fini");
@@ -1153,7 +1359,17 @@ void main() {
   if (!sansUi && !Q.has("piece") && !Q.has("lacet") && !sansAnimation) { balade = { t: 0 }; demander(); }
   setTimeout(finAide, 9000);
   // les reflets des autres pièces arrivent ensuite, sans bloquer l'ouverture
-  if (v3) setTimeout(() => { for (const r of sc.reflets || []) if (r[amb]) envDe(r.piece, amb); }, 600);
+  // Travaux de fond (hors téléphone, question de mémoire) : toute la seconde ambiance, cartes puis reflets, un élément à la fois et seulement
+  // après 1,2 s sans aucun mouvement : le passage jour / nuit ne charge alors plus rien, et rien ne tombe pendant un déplacement.
+  if (v3) (async () => {
+    const pause = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    try {
+      if (mobile) return;
+      for (const autre of ambiances) { if (autre === amb) continue;
+        for (const atlas of Object.keys(sc.cartes)) { await calme(1200); const t = await carte(atlas, autre); if (!envoyees.has(t)) { envoyees.add(t); renderer.initTexture(t); } await pause(150); }
+        for (const r of sc.reflets || []) if (r[autre]) { await calme(1200); await envR(r, autre); } }
+    } catch (e) { etat.erreurs.push("fond : " + (e.message || e)); }
+  })();
 
   Object.assign(api, {
     aller, ambiance: changerAmbiance, vueDessus,
@@ -1167,7 +1383,7 @@ void main() {
     viser: (x, y) => viser(x, y),
     chemin(a, b) { const A = typeof a === "number" ? V.pieces[a] : a, B = typeof b === "number" ? V.pieces[b] : b; return G.chemin(A.x, A.z, B.x, B.z); },
     libre: (x, z) => G.libre(x, z),
-    interne: { THREE, renderer, scene, camera, ciel, grille: G, visite: V, scene3: sc, plan },
+    interne: { THREE, renderer, scene, camera, ciel, grille: G, visite: V, scene3: sc, plan, spot: uSpot },
   });
   finPret(etat);
 }
