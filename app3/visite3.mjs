@@ -267,7 +267,10 @@ async function demarrer() {
   renderer.toneMappingExposure = 1;
   // Densité de pixels : 2 au plus sur ordinateur, 1,5 sur téléphone (un écran à 3 dessinait 4 fois plus de pixels pour une différence à peine visible).
   // Si les images restent lentes pendant qu'on bouge, on descend par quarts jusqu'à 1 (voir lenteur()).
-  let dpr = Q.has("dpr") ? +Q.get("dpr") || 1 : Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2), lentes = 0, baisse = false;
+  // Ordinateur : 2 même sur un écran ordinaire (PC Windows à densité 1), sinon l'image y est pixélisée (Gauthier, 17/11) ; plafond 8,3 Mpx à l'arrêt.
+  const densiteRepos = () => Q.has("dpr") ? +Q.get("dpr") || 1 : mobile ? Math.min(devicePixelRatio || 1, 1.5)
+    : Math.max(Math.min(devicePixelRatio || 1, 2), Math.min(2, Math.sqrt(8.3e6 / (innerWidth * innerHeight))));
+  let dpr = densiteRepos(), lentes = 0, baisse = false;
   renderer.setPixelRatio(dpr); etat.dpr = dpr; etat.densite = dpr;
   renderer.setSize(innerWidth, innerHeight, false);
   renderer.setClearColor(0x0c0a08, 1);
@@ -1233,7 +1236,7 @@ void main() {
     if (!e.code.startsWith("Shift")) { e.preventDefault(); if (marche) arreter(); balade = null; finAide(); repere.visible = false; } touches.add(e.code); demander(); });
   addEventListener("keyup", (e) => { touches.delete(e.code); });
   addEventListener("blur", () => touches.clear());
-  addEventListener("resize", () => { cadrer(); for (const m of miroirs) m.r.getRenderTarget().setSize(...tailleMiroir()); demander(); });
+  addEventListener("resize", () => { dpr = densiteRepos(); etat.dpr = dpr; regler(false, true); cadrer(); for (const m of miroirs) m.r.getRenderTarget().setSize(...tailleMiroir()); demander(); });
   canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); });
   canvas.addEventListener("webglcontextrestored", () => demander());
   document.addEventListener("visibilitychange", () => { if (!document.hidden) demander(); });
